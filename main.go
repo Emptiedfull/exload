@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,13 +14,13 @@ import (
 )
 
 type Config struct {
-	Proxy_port     int32 `yaml:"port"`
-	proxy_settings struct {
-		free_ports      []int32 `yaml:"free_ports"`
-		max_load        int32   `yaml:"max_load"`
-		startup_servers int8    `yaml:"startup_servers"`
+	Proxy_port     int32  `yaml:"port"`
+	Static_path    string `yaml:"static_path"`
+	Proxy_settings struct {
+		Free_ports      []int32 `yaml:"free_ports"`
+		Max_load        int32   `yaml:"max_load"`
+		Startup_servers int8    `yaml:"startup_servers"`
 	}
-	static_path string `yaml:"static_path"`
 }
 
 type server struct {
@@ -87,44 +88,57 @@ func wait_for_startup(url string, ch chan<- string) {
 }
 
 type manager struct {
+	start          int
 	free_ports     []int32
 	active_servers int8
 	total_req      int16
 	free_servers   int8
 	in_progress    int
+	total_servers  int
 	servers        []*server
 	host           string
+	logFile        *log.Logger
 }
 
-func NewManager(ports []int32, start int8) *manager {
-	total := len(ports)
+func NewManager(con Config) *manager {
+	total := len(con.Proxy_settings.Free_ports)
+
+	logFile, err := os.OpenFile("proxy.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Println("Error opening log file")
+	}
+	defer logFile.Close()
+
+	logger := log.New(logFile, "", log.LstdFlags)
+
 	m := &manager{
-		free_ports:     ports,
+		logFile:        logger,
+		start:          int(con.Proxy_settings.Startup_servers),
+		free_ports:     con.Proxy_settings.Free_ports,
 		active_servers: 0,
 		total_req:      0,
+		total_servers:  total,
 		free_servers:   int8(total),
 		in_progress:    0,
 		servers:        []*server{},
 		host:           "0.0.0.0",
 	}
 
-	pts := ports[:start]
-	fmt.Println(pts)
-	m.create_mass(pts)
-	go m.monitor()
+	m.create_mass(con.Proxy_settings.Startup_servers)
+	go m.monitor(con.Proxy_settings.Max_load)
 
 	return m
 }
 
-func (m *manager) create(port int32, host string) {
+func (m *manager) create(port int32) {
 
 	m.in_progress++
 	m.free_servers = m.free_servers - 1
 
-	var cmd *exec.Cmd = exec.Command("uvicorn", "server:app", "--port", strconv.Itoa(int(port)), "--host", host)
+	var cmd *exec.Cmd = exec.Command("uvicorn", "server:app", "--port", strconv.Itoa(int(port)), "--host", m.host)
 	cmd.Env = append(os.Environ(), "VIRTUAL_ENV=/venv", "PATH=/venv/bin:"+os.Getenv("PATH"))
 
-	logFile, err := os.OpenFile("logs/process.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile("logs/"+strconv.Itoa(int(port))+".log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		fmt.Println("Error opening log file")
 	}
@@ -140,10 +154,13 @@ func (m *manager) create(port int32, host string) {
 	}
 
 	ch := make(chan string)
-	url := fmt.Sprintf("http://%s:%d", host, port)
+	url := fmt.Sprintf("http://%s:%d", m.host, port)
 	go wait_for_startup(url, ch)
 
 	<-ch
+
+	fmt.Println("starting server on:", port)
+
 	m.in_progress = m.in_progress - 1
 	m.active_servers++
 
@@ -158,10 +175,31 @@ func (m *manager) create(port int32, host string) {
 
 }
 
-func (m *manager) create_mass(ports []int32) {
-	for _, port := range ports {
-		go m.create(port, m.host)
+func (m *manager) create_mass(n int8) {
+	for range n {
+		m.gen_one()
 	}
+}
+
+func (m *manager) gen_one() {
+	if m.active_servers < int8(m.total_servers) {
+		fmt.Println("upscaling")
+		port, err := m.popPort()
+		if err != nil {
+			return
+		}
+
+		go m.create(port)
+	}
+}
+
+func (m *manager) popPort() (int32, error) {
+	if len(m.free_ports) == 0 {
+		return 0, fmt.Errorf("no free ports")
+	}
+	port := m.free_ports[0]
+	m.free_ports = m.free_ports[1:]
+	return port, nil
 }
 
 func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request) {
@@ -184,19 +222,54 @@ func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go m.logFile.Println("Proxying request to:", lcs.url)
+
 	lcs.request(url, w, r)
 
 }
 
-func (m *manager) monitor() {
+func (m *manager) descale() {
+
+	if m.active_servers <= int8(m.start) {
+		return
+	}
+	fmt.Println("descaling")
+	se := m.servers[0]
+	m.servers = m.servers[1:]
+
+	se.cmd.Process.Kill()
+	m.active_servers = m.active_servers - 1
+	m.free_ports = append(m.free_ports, se.port)
+	m.free_servers++
+
+}
+
+func (m *manager) monitor(max int32) {
+	var pings int
 
 	for {
-		time.Sleep(1 * time.Second)
-		fmt.Print("\033[H\033[2J")
 
-		request_last_second := m.total_req
-		fmt.Println(request_last_second)
-		m.total_req = 0
+		time.Sleep(1 * time.Second)
+
+		if m.active_servers == 0 {
+			continue
+		}
+
+		rps := int32(m.total_req / int16(m.active_servers))
+		if rps > max {
+
+			m.gen_one()
+		}
+
+		if rps < max {
+			pings++
+
+			if pings > 10 {
+
+				m.descale()
+				pings = 0
+			}
+		}
 
 	}
 }
@@ -220,12 +293,12 @@ func main() {
 
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		fmt.Errorf(err.Error())
+		fmt.Println("huh")
 	}
 
-	m := NewManager(config.proxy_settings.free_ports, 2)
+	m := NewManager(config)
 
-	fs := http.FileServer(http.Dir("static"))
+	fs := http.FileServer(http.Dir(config.Static_path))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
 	fmt.Println(m.servers)
@@ -239,5 +312,5 @@ func main() {
 		m.proxy(url, w, r)
 	})
 
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":"+strconv.Itoa(int(config.Proxy_port)), nil)
 }

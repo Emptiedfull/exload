@@ -10,7 +10,7 @@ async def send_request(session):
     try:
         async with session.get(URL) as response:
             response_text = await response.text()
-            print(f"Response: {response_text}")
+            
             response_counter[response_text] += 1
     except aiohttp.ClientError as e:
         print(f"Request failed: {e}")
