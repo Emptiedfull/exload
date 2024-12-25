@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -13,10 +15,13 @@ type server struct {
 	req    int
 	cmd    *exec.Cmd
 	prefix string
+	mu     sync.RWMutex
 }
 
 func (s *server) request(url string, w http.ResponseWriter, r *http.Request) {
 
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	s.req = s.req + 1
 
 	req_url := s.url + url
@@ -27,17 +32,13 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	headers := make(map[string]string)
 	for name, values := range r.Header {
 		for _, value := range values {
-			headers[name] = value
 			req.Header.Add(name, value)
 		}
 	}
 
-	cookies := make(map[string]string)
 	for _, cookie := range r.Cookies() {
-		cookies[cookie.Name] = cookie.Value
 		req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
 	}
 
@@ -50,7 +51,27 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+
+	for name, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(name, value)
+
+		}
+	}
+
+	for _, cookie := range resp.Cookies() {
+		http.SetCookie(w, cookie)
+	}
+
 	w.Write(body)
+
+}
+
+func (s *server) terminate() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cmd.Process.Kill()
+	fmt.Println(s.port, " killed")
 
 }
 

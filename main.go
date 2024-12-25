@@ -21,16 +21,19 @@ func main() {
 	fs := http.FileServer(http.Dir(*config.Static_path))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
-	fmt.Println(m.servers)
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 
 		http.ServeFile(w, r, "static/favicon.ico")
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		url := r.URL.Path
+		url := r.URL.String()
+
 		m.proxy(url, w, r)
 	})
+
+	pid := os.Getpid()
+	fmt.Printf("The PID of this process is %d\n", pid)
 
 	http.ListenAndServe(":"+strconv.Itoa(int(*config.Proxy_port)), nil)
 }

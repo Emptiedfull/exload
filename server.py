@@ -1,5 +1,6 @@
 from fastapi import FastAPI,Request
 from fastapi.responses import FileResponse
+import time 
 
 app = FastAPI()
 
@@ -13,4 +14,5 @@ async def serve(request:Request):
 async def serve(request:Request):
     host = request.client.host
     port = request.url.port
+    time.sleep(1)
     return host,port

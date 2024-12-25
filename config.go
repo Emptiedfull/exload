@@ -12,17 +12,19 @@ type Config struct {
 	Proxy_port     *int32  `yaml:"port"`
 	Static_path    *string `yaml:"static_path"`
 	Proxy_settings struct {
-		Free_ports      []int32 `yaml:"free_ports"`
-		Max_load        *int32  `yaml:"max_load"`
-		Startup_servers *int8   `yaml:"startup_servers"`
+		Free_ports []int32 `yaml:"free_ports"`
+		Max_load   *int32  `yaml:"max_load"`
+
+		Scale_pings *int `yaml:"scale_pings"`
 	}
 	ServerOptions map[string]ServerOption `yaml:"server_options"`
 }
 
 type ServerOption struct {
-	Prefix  string   `yaml:"prefix"`
-	Command string   `yaml:"command"`
-	Args    []string `yaml:"args"`
+	Prefix          string   `yaml:"prefix"`
+	Command         string   `yaml:"command"`
+	Args            []string `yaml:"args"`
+	Startup_servers *int8    `yaml:"startup_servers"`
 }
 
 func getConfig() (Config, error) {
@@ -31,6 +33,7 @@ func getConfig() (Config, error) {
 	var default_Max_load int32 = 100
 	var default_start_servers int8 = 2
 	var config Config
+	var default_pings = 2
 
 	file, err := os.Open("config.yaml")
 	if err != nil {
@@ -63,8 +66,14 @@ func getConfig() (Config, error) {
 		config.Proxy_settings.Max_load = &default_Max_load
 	}
 
-	if config.Proxy_settings.Startup_servers == nil {
-		config.Proxy_settings.Startup_servers = &default_start_servers
+	for _, srv := range config.ServerOptions {
+		if srv.Startup_servers == nil {
+			srv.Startup_servers = &default_start_servers
+		}
+	}
+
+	if config.Proxy_settings.Scale_pings == nil {
+		config.Proxy_settings.Scale_pings = &default_pings
 	}
 
 	return config, nil
