@@ -1,3 +1,125 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap');
+
 h1{
-    font-size: 20rem;
+    font-size: 10;
 }
+
+*{
+    box-sizing: border-box;
+    padding: 0  ;
+    margin: 0;
+}
+
+body{
+    display: flex;
+    min-height: 100vh;
+    background-color: #E0E1DD;
+    color: #E0E1DD;
+    font-family: 'Poppins', sans-serif;
+    
+}
+
+.sidebar{
+    padding-top: 2%;
+    height: 100vh;
+    flex: 1 0 0 ;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    background-color: #415A77;
+}
+
+.content_main{
+    padding-top: 4rem;
+    display: flex;
+    flex-direction: column;
+    flex: 3.5 0 0;
+}
+
+.status_bar{
+    
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 7rem;
+    padding-left: 3rem;
+    padding-right: 3rem;
+    
+}
+
+.status_item{
+    background-color: #778DA9;
+    border-radius: 10px;
+    padding: 1rem;
+    flex: 1;
+    text-align: center;
+    
+}
+
+.pen_list{
+    width: 90%;
+    margin-top: 4rem;
+    display:flex;
+    align-self: center;
+    
+}
+
+.pen_list table{
+    width: 100%;
+    
+    border-radius: 5px;
+    border-spacing: 0px 15px;
+    
+}
+
+
+
+.pen_list th{
+    text-align: left;
+    padding: 1rem;
+    background-color: #1B263B;
+    
+}
+
+.pen_list th:first-child {
+    border-bottom-left-radius: 10px;
+    border-top-left-radius: 10px; /* Adjust the radius as needed */
+}
+
+.pen_list th:last-child {
+    border-bottom-right-radius: 10px;
+    border-top-right-radius: 10px; /* Adjust the radius as needed */
+}
+
+.pen_list tr {
+    margin-top: 1rem;
+    background-color: #778DA9;
+}
+
+.pen_list tr:first-child {
+    border-bottom-left-radius: 10px;
+    border-top-left-radius: 10px;
+}
+
+.pen_list td {
+    padding: 1rem;
+    
+}
+
+.pen_list tr td:first-child {
+    border-bottom-left-radius: 10px;
+    border-top-left-radius: 10px;
+}
+
+.pen_list tr td:last-child {
+    border-bottom-right-radius: 10px;
+    border-top-right-radius: 10px;
+}
+
+.settings{
+    margin-top: 0.2rem;
+    padding-top: 0.1rem;
+    height: 1.4rem;
+    cursor: pointer;
+}
+

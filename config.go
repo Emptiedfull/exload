@@ -12,10 +12,11 @@ type Config struct {
 	Proxy_port     *int32  `yaml:"port"`
 	Static_path    *string `yaml:"static_path"`
 	Proxy_settings struct {
-		Free_ports []int32 `yaml:"free_ports"`
-		Max_load   *int32  `yaml:"max_load"`
-
-		Scale_pings *int `yaml:"scale_pings"`
+		Free_ports     []int32 `yaml:"free_ports"`
+		Max_load       *int32  `yaml:"max_load"`
+		Upscale_ping   *int8   `yaml:"upscale_pings"`
+		Downscale_ping *int8   `yaml:"downscale_pings"`
+		scale_interval *int    `yaml:"interval"`
 	}
 	ServerOptions map[string]ServerOption `yaml:"server_options"`
 }
@@ -25,15 +26,18 @@ type ServerOption struct {
 	Command         string   `yaml:"command"`
 	Args            []string `yaml:"args"`
 	Startup_servers *int8    `yaml:"startup_servers"`
+	Max_servers     *int8    `yaml:"max_servers"`
 }
 
 func getConfig() (Config, error) {
 	var default_port int32 = 8080
 	default_static := "/static"
+	var default_max_servers int8 = int8(127)
 	var default_Max_load int32 = 100
 	var default_start_servers int8 = 2
 	var config Config
-	var default_pings = 2
+	var default_pings int8 = 2
+	var default_interval int = 3
 
 	file, err := os.Open("config.yaml")
 	if err != nil {
@@ -66,16 +70,30 @@ func getConfig() (Config, error) {
 		config.Proxy_settings.Max_load = &default_Max_load
 	}
 
-	for _, srv := range config.ServerOptions {
+	for key, srv := range config.ServerOptions {
 		if srv.Startup_servers == nil {
 			srv.Startup_servers = &default_start_servers
 		}
+
+		if srv.Max_servers == nil {
+			srv.Max_servers = &default_max_servers
+		}
+
+		config.ServerOptions[key] = srv
 	}
 
-	if config.Proxy_settings.Scale_pings == nil {
-		config.Proxy_settings.Scale_pings = &default_pings
+	if config.Proxy_settings.Downscale_ping == nil {
+		config.Proxy_settings.Downscale_ping = &default_pings
 	}
+	if config.Proxy_settings.Upscale_ping == nil {
+		config.Proxy_settings.Upscale_ping = &default_pings
+	}
+
+	if config.Proxy_settings.scale_interval == nil {
+		config.Proxy_settings.scale_interval = &default_interval
+	}
+
+	fmt.Println(*config.Proxy_settings.scale_interval)
 
 	return config, nil
-
 }

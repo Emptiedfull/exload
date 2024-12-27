@@ -2,17 +2,17 @@ port: 8080
 static_path: "/static"
 proxy_settings:
   free_ports: [8003,8004,8005,8006,8007,8008,8009]
-  max_load: 100
+  max_load: 5
   startup_servers: 3
-  scale_pings: 10
+  upscale_pings: 5
+  downscale_pings : 10
+  interval : 1
+
 server_options:
   server1:
     prefix: /api
     command: uvicorn
     args: ["server:app","--port","<port>"]
     startup_servers: 3
-  server2:
-    prefix: /admin
-    command: uvicorn
-    args: ["server:app","--port","<port>"]
-    startup_servers: 3
+    max_servers: 4
+  

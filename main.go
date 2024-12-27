@@ -18,12 +18,17 @@ func main() {
 	m := NewManager(config)
 	defer m.file.Close()
 
-	fs := http.FileServer(http.Dir(*config.Static_path))
-	http.Handle("/static/", http.StripPrefix("/static/", fs))
+	fs := http.FileServer(http.Dir("./static"))
+	http.Handle("/static/", http.StripPrefix("/static", fs))
 
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 
 		http.ServeFile(w, r, "static/favicon.ico")
+	})
+
+	http.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
+
+		monitor(m, r.URL.String(), w, r)
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

@@ -12,17 +12,27 @@ import (
 type server struct {
 	url    string
 	port   int32
-	req    int
 	cmd    *exec.Cmd
 	prefix string
-	mu     sync.RWMutex
+
+	req int
+
+	mu    sync.RWMutex
+	reqMu sync.RWMutex
 }
 
 func (s *server) request(url string, w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	s.req = s.req + 1
+
+	defer func() {
+		s.reqMu.Lock()
+		s.req = s.req + 1
+		s.reqMu.Unlock()
+	}()
 
 	req_url := s.url + url
 
@@ -45,7 +55,8 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		http.Error(w, "Failed to request", http.StatusInternalServerError)
+		s.request(url, w, r)
+		return
 	}
 
 	defer resp.Body.Close()

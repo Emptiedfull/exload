@@ -12,27 +12,28 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/gorilla/websocket"
 )
 
 type manager struct {
-	free_ports     []int32
-	active_servers int8
-	free_servers   int8
-	in_progress    int
-	total_servers  int
-	servers        []*server
-	host           string
-	logFile        *log.Logger
-	file           *os.File
-	UrlMap         map[string]*pen
+	free_ports []int32
+
+	host    string
+	logFile *log.Logger
+	file    *os.File
+	UrlMap  map[string]*pen
+	conn    map[string]*websocket.Conn
 
 	mu sync.RWMutex
 }
 
 type pen struct {
-	servers []*server
-	command command
-	con     int
+	max_servers int8
+	min_servers int8
+	servers     []*server
+	command     command
+	con         int
+	conMu       sync.RWMutex
 }
 
 type command struct {
@@ -41,7 +42,6 @@ type command struct {
 }
 
 func NewManager(con Config) *manager {
-	total := len(con.Proxy_settings.Free_ports)
 
 	logFile, err := os.OpenFile("logs/proxy.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
@@ -51,21 +51,19 @@ func NewManager(con Config) *manager {
 	logger := log.New(logFile, "", log.LstdFlags)
 
 	m := &manager{
-		logFile:        logger,
-		free_ports:     con.Proxy_settings.Free_ports,
-		active_servers: 0,
-		total_servers:  total,
-		free_servers:   int8(total),
-		in_progress:    0,
-		servers:        []*server{},
-		host:           "0.0.0.0",
-		file:           logFile,
-		UrlMap:         make(map[string]*pen),
-		mu:             sync.RWMutex{},
+		logFile:    logger,
+		free_ports: con.Proxy_settings.Free_ports,
+		host:       "0.0.0.0",
+		file:       logFile,
+		UrlMap:     make(map[string]*pen),
+		mu:         sync.RWMutex{},
+		conn:       make(map[string]*websocket.Conn),
 	}
 
-	go m.dyno(*con.Proxy_settings.Scale_pings)
+	go m.Scaling_dyno(*con.Proxy_settings.Downscale_ping, *con.Proxy_settings.Upscale_ping, *con.Proxy_settings.scale_interval, int(*con.Proxy_settings.Max_load))
+
 	m.UrlMap = m.setupUrlMap(con.ServerOptions)
+	go m.monitorDyno()
 
 	return m
 }
@@ -95,8 +93,8 @@ func (m *manager) setupUrlMap(s map[string]ServerOption) map[string]*pen {
 		}
 
 		wg.Wait()
-		fmt.Println(srvArr)
-		m.UrlMap[ser.Prefix] = &pen{servers: srvArr, command: command{com: ser.Command, args: ser.Args}, con: 0}
+		fmt.Println(srvArr, *ser.Max_servers)
+		m.UrlMap[ser.Prefix] = &pen{servers: srvArr, command: command{com: ser.Command, args: ser.Args}, con: 0, max_servers: 4, min_servers: *ser.Startup_servers, conMu: sync.RWMutex{}}
 
 	}
 
@@ -115,9 +113,6 @@ func (m *manager) logErr(s string, e error) {
 func (m *manager) create(port int32, cmd *exec.Cmd, done chan<- *server) {
 
 	fmt.Println("starting server on", port, cmd)
-
-	m.in_progress++
-	m.free_servers = m.free_servers - 1
 
 	// var cmd *exec.Cmd = exec.Command("uvicorn", "server:app", "--port", strconv.Itoa(int(port)), "--host", m.host)
 	cmd.Env = append(os.Environ(), "VIRTUAL_ENV=/venv", "PATH=/venv/bin:"+os.Getenv("PATH"))
@@ -146,52 +141,57 @@ func (m *manager) create(port int32, cmd *exec.Cmd, done chan<- *server) {
 
 	m.logStr("Server started on", port)
 
-	m.in_progress = m.in_progress - 1
-	m.active_servers++
-
-	s := &server{url, port, 0, cmd, "/", sync.RWMutex{}}
+	s := &server{url, port, cmd, "/", 0, sync.RWMutex{}, sync.RWMutex{}}
 
 	done <- s
 	close(done)
 
-	m.servers = append(m.servers, s)
-
 	err = cmd.Wait()
+	for _, pen := range m.UrlMap {
+		for i, srv := range pen.servers {
+			if s == srv {
+				fmt.Println("server removed")
+				m.mu.Lock()
+				m.free_ports = append(m.free_ports, srv.port)
+				pen.servers = append(pen.servers[:i], pen.servers[i+1:]...)
+				m.mu.Unlock()
+			}
+		}
+	}
+
 	if err != nil {
 		m.logErr("server closed with", err)
 		return
 	}
+	fmt.Println("server ended")
 
 }
 
 func (m *manager) gen_one(comm command) (*server, error) {
-	if m.active_servers < int8(m.total_servers) {
 
-		port, err := m.popPort()
-		if err != nil {
-			return nil, err
-		}
-
-		nargs := make([]string, len(comm.args))
-
-		for i, arg := range comm.args {
-			if arg == "<port>" {
-				nargs[i] = strconv.Itoa(int(port))
-			} else {
-				nargs[i] = arg
-			}
-		}
-
-		var cmd *exec.Cmd = exec.Command(comm.com, nargs...)
-
-		done := make(chan *server)
-
-		go m.create(port, cmd, done)
-
-		return <-done, nil
-	} else {
-		return nil, nil
+	port, err := m.popPort()
+	if err != nil {
+		return nil, err
 	}
+
+	nargs := make([]string, len(comm.args))
+
+	for i, arg := range comm.args {
+		if arg == "<port>" {
+			nargs[i] = strconv.Itoa(int(port))
+		} else {
+			nargs[i] = arg
+		}
+	}
+
+	var cmd *exec.Cmd = exec.Command(comm.com, nargs...)
+
+	done := make(chan *server)
+
+	go m.create(port, cmd, done)
+
+	return <-done, nil
+
 }
 
 func (m *manager) popPort() (int32, error) {
@@ -215,15 +215,18 @@ func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request) {
 	path := "/" + strings.Join(parts[2:], "/")
 	dest := "/" + parts[1]
 
-	m.mu.RLock()         // Use RLock for concurrent reads
-	defer m.mu.RUnlock() // Ensure RUnlock after the operation
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
 	pen, ok := m.UrlMap[dest]
 	if !ok || pen == nil {
 		http.Error(w, "Destination not found", http.StatusNotFound)
 		return
 	}
+
+	pen.conMu.Lock()
 	pen.con++
+	pen.conMu.Unlock()
 
 	srv_options := pen.servers
 	if len(srv_options) == 0 {
@@ -234,8 +237,6 @@ func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request) {
 	var lcs *server
 
 	var min int = int(^uint(0) >> 1)
-
-	fmt.Println(srv_options)
 
 	for _, srv := range srv_options {
 		if srv.req < min {
@@ -250,15 +251,21 @@ func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request) {
 	}
 
 	lcs.request(path, w, r)
+	pen.conMu.Lock()
 	pen.con = pen.con - 1
+	pen.conMu.Unlock()
 
 }
 
 func (m *manager) upscale(prefix string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	p := m.UrlMap[prefix]
+
+	if len(p.servers) >= int(p.max_servers) {
+		return
+	}
+
 	srv, err := m.gen_one(p.command)
 	if err != nil {
 		m.logErr("error upscaling", err)
@@ -272,24 +279,25 @@ func (m *manager) descale(prefix string) {
 	defer m.mu.Unlock()
 
 	p := m.UrlMap[prefix]
-	if len(p.servers) > 3 {
+	if len(p.servers) > int(p.min_servers) {
 		srv := p.servers[0]
 		srv.terminate()
+		m.free_ports = append(m.free_ports, srv.port)
 		p.servers = p.servers[1:]
 	} else {
 		m.logErr("minimum server limit", fmt.Errorf("2"))
 	}
-	fmt.Println(m.UrlMap[prefix].servers)
+
 }
 
-func (m *manager) dyno(m_pings int) {
-	ticker := time.NewTicker(1 * time.Second)
+func (m *manager) Scaling_dyno(d_pings int8, u_upings int8, interval int, m_load int) {
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 
-	var descale int = 0
-	var upscale int = 0
+	var descale int8 = 0
+	var upscale int8 = 0
 
-	var upscale_rate int = 2
-	var descale_rate int = 6
+	var upscale_rate int8 = u_upings
+	var descale_rate int8 = d_pings
 
 	go func() {
 
@@ -297,26 +305,32 @@ func (m *manager) dyno(m_pings int) {
 			for pre, pen := range m.UrlMap {
 
 				if len(pen.servers) > 0 {
+					pen.conMu.RLock()
 					load := pen.con / len(pen.servers)
-					fmt.Println(pre, pen.con, load)
 
-					if load > 10 {
+					pen.conMu.RUnlock()
+
+					if len(pen.servers) < int(pen.min_servers) {
+						go m.upscale(pre)
+					}
+
+					if load > m_load {
 						descale = 0
 						upscale++
 
 						if upscale >= upscale_rate {
-							fmt.Println("trying to upscale")
+
 							upscale = 0
 							go m.upscale(pre)
 						}
 					}
 
-					if load < 10 {
+					if load < m_load {
 						upscale = 0
 						descale++
 
 						if descale >= descale_rate {
-							fmt.Println("trying to descale")
+
 							descale = 0
 							m.descale(pre)
 						}
