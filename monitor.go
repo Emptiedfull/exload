@@ -25,7 +25,6 @@ type State struct {
 }
 
 func createPayload(pS *State, nS State) []templ.Component {
-
 	payload := make([]templ.Component, 0)
 	if pS.rps != nS.rps {
 		pS.rps = nS.rps
@@ -45,32 +44,54 @@ func createPayload(pS *State, nS State) []templ.Component {
 
 func (m *manager) monitorDyno() {
 	ticker := time.NewTicker(1 * time.Second)
-	pS := State{}
 
 	for range ticker.C {
 
-		nS := State{}
+		gh := graphUpdate(m)
 
-		if m.conn["main_dashboard"] == nil {
-			nS = State{}
-			continue
-		}
-		fmt.Println("rick")
-		rps := strconv.Itoa(TotalRps(m.UrlMap))
-		mem := strconv.Itoa(totalMem(m.UrlMap))
+		rps := strconv.Itoa(gh.RPS)
+		mem := strconv.Itoa(gh.MEM)
 		total, active := getTotalPorts(m)
 		srvs := strconv.Itoa(active) + "/" + strconv.Itoa(total)
 
-		nS = State{rps, mem, srvs}
-
-		sendMass(m.conn["main_dashboard"], createPayload(&pS, nS))
+		nS := State{rps, mem, srvs}
+		sendUpdate(m.conn["main_dashboard"], nS)
 
 	}
 
 }
 
+type graph_update struct {
+	RPS int `json:"rps"`
+	MEM int `json:"mem"`
+}
+
+func graphUpdate(m *manager) graph_update {
+	gh := graph_update{TotalRps(m.UrlMap), totalMem(m.UrlMap)}
+
+	clients := m.conn["main_graph"]
+	if len(clients) == 0 {
+		return gh
+	}
+	for _, client := range clients {
+		client.conn.WriteJSON(gh)
+	}
+
+	return gh
+}
+
+func sendUpdate(clients []*client, state State) {
+	for _, client := range clients {
+		payload := createPayload(&client.state, state)
+		if len(payload) == 0 {
+			continue
+		}
+		sendMass(client.conn, payload)
+	}
+}
+
 func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
-	fmt.Println("monitor", url)
+
 	switch {
 	case url == "admin/":
 		res := index()
@@ -85,22 +106,21 @@ func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
 
 }
 
-func send(conn *websocket.Conn, t templ.Component) {
+// func send(conn *websocket.Conn, t templ.Component) {
 
-	if conn == nil {
-		fmt.Println("nil conn")
-		return
-	}
+// 	if conn == nil {
+// 		return
+// 	}
 
-	var buf strings.Builder
-	err := t.Render(context.Background(), &buf)
-	if err != nil {
-		fmt.Println("error sending", err)
-	}
+// 	var buf strings.Builder
+// 	err := t.Render(context.Background(), &buf)
+// 	if err != nil {
+// 		fmt.Println("error sending", err)
+// 	}
 
-	conn.WriteMessage(websocket.TextMessage, []byte(buf.String()))
+// 	conn.WriteMessage(websocket.TextMessage, []byte(buf.String()))
 
-}
+// }
 
 func sendMass(conn *websocket.Conn, tl []templ.Component) {
 	var bufmain strings.Builder
@@ -111,7 +131,6 @@ func sendMass(conn *websocket.Conn, tl []templ.Component) {
 			fmt.Println("error rendering template", err)
 			continue
 		}
-		fmt.Println(buf)
 		bufmain.WriteString(buf.String())
 	}
 
@@ -135,7 +154,8 @@ func wsHandler(url string, w http.ResponseWriter, r *http.Request, m *manager) {
 	}
 
 	path := url[10:]
-	m.conn[path] = conn
+	fmt.Println(url)
+	m.conn[path] = append(m.conn[path], &client{conn, State{}})
 
 	for {
 

@@ -13,47 +13,86 @@ h1{
 body{
     display: flex;
     min-height: 100vh;
-    background-color: #E0E1DD;
-    color: #E0E1DD;
-    font-family: 'Poppins', sans-serif;
+   
+    background:  #2A2A2A;
     
+    font-family: 'Inter', sans-serif;
+
+
+
 }
 
 .sidebar{
-    padding-top: 2%;
+    position: fixed;
+    padding: 1%;
     height: 100vh;
-    flex: 1 0 0 ;
+    width: 250px;
     display: flex;
-    align-items: center;
+   
     flex-direction: column;
-    background-color: #415A77;
+    border-right: 1px solid rgba(255, 255, 255, 0.15);
+    background-color: #2A2A2A;
+}
+
+.sidebar h1{
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    font-size: 1.5rem;
+    color: white;
+    padding-bottom: 0.3rem;
 }
 
 .content_main{
-    padding-top: 4rem;
+    margin-left: 250px;
+    padding: 2rem;
     display: flex;
     flex-direction: column;
-    flex: 3.5 0 0;
+    flex: 4 0 0;
+    overflow-y: auto;
 }
 
 .status_bar{
     
     display: flex;
     flex-direction: row;
-    justify-content: space-around;
-    gap: 7rem;
-    padding-left: 3rem;
-    padding-right: 3rem;
+    justify-content: space-between;
+    gap: 1.5rem;
+}
+.status_bar_title{
+    color: white;
+    font-size: 1.2rem;
+    margin-bottom: 0.4rem;
+}
+
+.chart-container{
+    padding: 1rem;
+    margin-top: 1.6rem;
+    flex: 1 0 0;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-radius: 16px;
+    position: relative;
     
 }
 
+
+
 .status_item{
-    background-color: #778DA9;
+    background: var(--Background-BG4, #EDEEFC);
     border-radius: 10px;
     padding: 1rem;
     flex: 1;
-    text-align: center;
-    
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.status_item p{
+    font-size: 0.9rem;
+}
+
+.status_item span{
+    font-size: 1.4rem;
+    font-weight: bold;
 }
 
 .pen_list{

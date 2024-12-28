@@ -5,7 +5,7 @@ proxy_settings:
   max_load: 5
   startup_servers: 3
   upscale_pings: 5
-  downscale_pings : 10
+  downscale_pings : 30
   interval : 1
 
 server_options:
@@ -13,6 +13,6 @@ server_options:
     prefix: /api
     command: uvicorn
     args: ["server:app","--port","<port>"]
-    startup_servers: 3
+    startup_servers: 1
     max_servers: 4
   

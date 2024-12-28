@@ -22,9 +22,14 @@ type manager struct {
 	logFile *log.Logger
 	file    *os.File
 	UrlMap  map[string]*pen
-	conn    map[string]*websocket.Conn
+	conn    map[string][]*client
 
 	mu sync.RWMutex
+}
+
+type client struct {
+	conn  *websocket.Conn
+	state State
 }
 
 type pen struct {
@@ -57,7 +62,7 @@ func NewManager(con Config) *manager {
 		file:       logFile,
 		UrlMap:     make(map[string]*pen),
 		mu:         sync.RWMutex{},
-		conn:       make(map[string]*websocket.Conn),
+		conn:       make(map[string][]*client),
 	}
 
 	go m.Scaling_dyno(*con.Proxy_settings.Downscale_ping, *con.Proxy_settings.Upscale_ping, *con.Proxy_settings.scale_interval, int(*con.Proxy_settings.Max_load))

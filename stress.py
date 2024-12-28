@@ -29,7 +29,7 @@ async def main(rp):
 
 
 if __name__ == "__main__":
-    rp = 20000
+    rp = 10000
     start = time.time()
     asyncio.run(main(rp))
     print(time.time()-start)
