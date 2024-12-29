@@ -1,12 +1,12 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,8 +16,6 @@ import (
 )
 
 type manager struct {
-	free_ports []int32
-
 	host    string
 	logFile *log.Logger
 	file    *os.File
@@ -56,19 +54,19 @@ func NewManager(con Config) *manager {
 	logger := log.New(logFile, "", log.LstdFlags)
 
 	m := &manager{
-		logFile:    logger,
-		free_ports: con.Proxy_settings.Free_ports,
-		host:       "0.0.0.0",
-		file:       logFile,
-		UrlMap:     make(map[string]*pen),
-		mu:         sync.RWMutex{},
-		conn:       make(map[string][]*client),
+		logFile: logger,
+		host:    "0.0.0.0",
+		file:    logFile,
+		UrlMap:  make(map[string]*pen),
+		mu:      sync.RWMutex{},
+		conn:    make(map[string][]*client),
 	}
 
 	go m.Scaling_dyno(*con.Proxy_settings.Downscale_ping, *con.Proxy_settings.Upscale_ping, *con.Proxy_settings.scale_interval, int(*con.Proxy_settings.Max_load))
 
 	m.UrlMap = m.setupUrlMap(con.ServerOptions)
 	go m.monitorDyno()
+	go m.rpsDyno()
 
 	return m
 }
@@ -98,7 +96,7 @@ func (m *manager) setupUrlMap(s map[string]ServerOption) map[string]*pen {
 		}
 
 		wg.Wait()
-		fmt.Println(srvArr, *ser.Max_servers)
+
 		m.UrlMap[ser.Prefix] = &pen{servers: srvArr, command: command{com: ser.Command, args: ser.Args}, con: 0, max_servers: 4, min_servers: *ser.Startup_servers, conMu: sync.RWMutex{}}
 
 	}
@@ -115,16 +113,33 @@ func (m *manager) logErr(s string, e error) {
 	go m.logFile.Println(red(fmt.Sprintf("%s: %v", s, e)))
 }
 
-func (m *manager) create(port int32, cmd *exec.Cmd, done chan<- *server) {
+func genSock() string {
+	root := "/tmp/"
+	currentTime := time.Now().String()
+	hash := sha256.Sum256([]byte(currentTime))
+	sockName := fmt.Sprintf("%x", hash)[:10] + ".sock"
+	path := root + sockName
+	return path
+}
 
-	fmt.Println("starting server on", port, cmd)
+func (m *manager) create(sock string, cmd *exec.Cmd, done chan<- *server) {
+
+	fmt.Println("starting server on", sock, cmd)
 
 	// var cmd *exec.Cmd = exec.Command("uvicorn", "server:app", "--port", strconv.Itoa(int(port)), "--host", m.host)
-	cmd.Env = append(os.Environ(), "VIRTUAL_ENV=/venv", "PATH=/venv/bin:"+os.Getenv("PATH"))
+	venvPath := "/venv"
+	cmd.Env = append(os.Environ(), "VIRTUAL_ENV="+venvPath, "PATH="+venvPath+"/bin:"+os.Getenv("PATH"))
 
-	logFile, err := os.OpenFile("logs/server_logs/"+strconv.Itoa(int(port))+".log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	logDir := "logs/server_logs"
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		m.logErr("error creating log directory", err)
+		return
+	}
+
+	logFile, err := os.OpenFile(logDir+"/"+sock[4:8]+".log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		m.logErr("error opening logs", err)
+		return
 	}
 	defer logFile.Close()
 
@@ -137,16 +152,16 @@ func (m *manager) create(port int32, cmd *exec.Cmd, done chan<- *server) {
 		return
 	}
 
+	// s := &server{url, port, cmd, "/", 0, sync.RWMutex{}, sync.RWMutex{}}
+	s := &server{sock: sock, cmd: cmd, prefix: "/", req: 0, reqMu: sync.RWMutex{}, mu: sync.RWMutex{}, conMu: sync.RWMutex{}, rpsMu: sync.RWMutex{}}
+
 	ch := make(chan string)
-	url := fmt.Sprintf("http://%s:%d", m.host, port)
-	go wait_for_startup(url, ch)
+	go wait_for_startup(s, ch)
 
 	<-ch
 	close(ch)
 
-	m.logStr("Server started on", port)
-
-	s := &server{url, port, cmd, "/", 0, sync.RWMutex{}, sync.RWMutex{}}
+	m.logStr("Server started on", cmd.Process.Pid)
 
 	done <- s
 	close(done)
@@ -157,7 +172,6 @@ func (m *manager) create(port int32, cmd *exec.Cmd, done chan<- *server) {
 			if s == srv {
 				fmt.Println("server removed")
 				m.mu.Lock()
-				m.free_ports = append(m.free_ports, srv.port)
 				pen.servers = append(pen.servers[:i], pen.servers[i+1:]...)
 				m.mu.Unlock()
 			}
@@ -174,16 +188,17 @@ func (m *manager) create(port int32, cmd *exec.Cmd, done chan<- *server) {
 
 func (m *manager) gen_one(comm command) (*server, error) {
 
-	port, err := m.popPort()
-	if err != nil {
-		return nil, err
-	}
+	// port, err := m.popPort()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	nargs := make([]string, len(comm.args))
+	sock := genSock()
 
 	for i, arg := range comm.args {
-		if arg == "<port>" {
-			nargs[i] = strconv.Itoa(int(port))
+		if arg == "<sock>" {
+			nargs[i] = sock
 		} else {
 			nargs[i] = arg
 		}
@@ -193,72 +208,81 @@ func (m *manager) gen_one(comm command) (*server, error) {
 
 	done := make(chan *server)
 
-	go m.create(port, cmd, done)
+	go m.create(sock, cmd, done)
 
 	return <-done, nil
 
 }
 
-func (m *manager) popPort() (int32, error) {
-	if len(m.free_ports) == 0 {
-		return 0, fmt.Errorf("no free ports")
-	}
-	port := m.free_ports[0]
-	m.free_ports = m.free_ports[1:]
-	return port, nil
-}
+// func (m *manager) popPort() (int32, error) {
+// 	if len(m.free_ports) == 0 {
+// 		return 0, fmt.Errorf("no free ports")
+// 	}
+// 	port := m.free_ports[0]
+// 	m.free_ports = m.free_ports[1:]
+// 	return port, nil
+// }
 
-func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request) {
+func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request, cache *Cache) {
 
-	parts := strings.SplitN(url, "/", -1)
+	hit, val := ReadThrough(r, cache)
 
-	if len(parts) < 3 {
-		http.Error(w, "Invalid URL format", http.StatusBadRequest)
-		fmt.Println(parts)
-		return
-	}
-	path := "/" + strings.Join(parts[2:], "/")
-	dest := "/" + parts[1]
+	if hit {
+		w.Write(val)
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	} else {
 
-	pen, ok := m.UrlMap[dest]
-	if !ok || pen == nil {
-		http.Error(w, "Destination not found", http.StatusNotFound)
-		return
-	}
+		parts := strings.SplitN(url, "/", -1)
 
-	pen.conMu.Lock()
-	pen.con++
-	pen.conMu.Unlock()
-
-	srv_options := pen.servers
-	if len(srv_options) == 0 {
-		http.Error(w, "No servers available", http.StatusServiceUnavailable)
-		return
-	}
-
-	var lcs *server
-
-	var min int = int(^uint(0) >> 1)
-
-	for _, srv := range srv_options {
-		if srv.req < min {
-			lcs = srv
-			min = srv.req
-
+		if len(parts) < 3 {
+			http.Error(w, "Invalid URL format", http.StatusBadRequest)
+			fmt.Println(parts)
+			return
 		}
-	}
+		path := "/" + strings.Join(parts[2:], "/")
+		dest := "/" + parts[1]
 
-	if lcs == nil {
-		lcs = m.UrlMap["/api"].servers[0]
-	}
+		m.mu.RLock()
+		defer m.mu.RUnlock()
 
-	lcs.request(path, w, r)
-	pen.conMu.Lock()
-	pen.con = pen.con - 1
-	pen.conMu.Unlock()
+		pen, ok := m.UrlMap[dest]
+		if !ok || pen == nil {
+			http.Error(w, "Destination not found", http.StatusNotFound)
+			return
+		}
+
+		// pen.conMu.Lock()
+		// pen.con++
+		// pen.conMu.Unlock()
+
+		srv_options := pen.servers
+		if len(srv_options) == 0 {
+			http.Error(w, "No servers available", http.StatusServiceUnavailable)
+			return
+		}
+
+		var lcs *server
+
+		var min int = int(^uint(0) >> 1)
+
+		for _, srv := range srv_options {
+			if srv.req < min {
+				lcs = srv
+				min = srv.req
+
+			}
+		}
+
+		if lcs == nil {
+			lcs = m.UrlMap["/api"].servers[0]
+		}
+
+		lcs.request(path, w, r, cache)
+
+		// pen.conMu.Lock()
+		// pen.con = pen.con - 1
+		// pen.conMu.Unlock()
+	}
 
 }
 
@@ -287,12 +311,31 @@ func (m *manager) descale(prefix string) {
 	if len(p.servers) > int(p.min_servers) {
 		srv := p.servers[0]
 		srv.terminate()
-		m.free_ports = append(m.free_ports, srv.port)
+
 		p.servers = p.servers[1:]
 	} else {
 		m.logErr("minimum server limit", fmt.Errorf("2"))
 	}
 
+}
+
+func (m *manager) rpsDyno() {
+	ticker := time.NewTicker(1 * time.Second)
+
+	for range ticker.C {
+		for _, pen := range m.UrlMap {
+			for _, srv := range pen.servers {
+				srv.rpsMu.Lock()
+				srv.rps = srv.req
+				srv.rpsMu.Unlock()
+
+				srv.reqMu.Lock()
+				srv.req = 0
+				srv.reqMu.Unlock()
+			}
+
+		}
+	}
 }
 
 func (m *manager) Scaling_dyno(d_pings int8, u_upings int8, interval int, m_load int) {
@@ -311,7 +354,7 @@ func (m *manager) Scaling_dyno(d_pings int8, u_upings int8, interval int, m_load
 
 				if len(pen.servers) > 0 {
 					pen.conMu.RLock()
-					load := pen.con / len(pen.servers)
+					load := getRpsByPen(pen) / len(pen.servers)
 
 					pen.conMu.RUnlock()
 

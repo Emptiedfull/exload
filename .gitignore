@@ -1,4 +1,5 @@
 venv/
+venvTesting/
 logs/
 __pycache__/
 tester.sh

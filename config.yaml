@@ -1,7 +1,7 @@
-port: 8080
+port: 37087
 static_path: "/static"
 proxy_settings:
-  free_ports: [8003,8004,8005,8006,8007,8008,8009]
+  
   max_load: 5
   startup_servers: 3
   upscale_pings: 5
@@ -11,8 +11,14 @@ proxy_settings:
 server_options:
   server1:
     prefix: /api
-    command: uvicorn
-    args: ["server:app","--port","<port>"]
+    command: venv/bin/uvicorn
+    args: ["server:app","--uds","<sock>"]
+    startup_servers: 1
+    max_servers: 4
+  server2:
+    prefix: /admi
+    command: venv/bin/uvicorn
+    args: ["server:app","--uds","<sock>"]
     startup_servers: 1
     max_servers: 4
   

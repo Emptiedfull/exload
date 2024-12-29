@@ -12,11 +12,10 @@ type Config struct {
 	Proxy_port     *int32  `yaml:"port"`
 	Static_path    *string `yaml:"static_path"`
 	Proxy_settings struct {
-		Free_ports     []int32 `yaml:"free_ports"`
-		Max_load       *int32  `yaml:"max_load"`
-		Upscale_ping   *int8   `yaml:"upscale_pings"`
-		Downscale_ping *int8   `yaml:"downscale_pings"`
-		scale_interval *int    `yaml:"interval"`
+		Max_load       *int32 `yaml:"max_load"`
+		Upscale_ping   *int8  `yaml:"upscale_pings"`
+		Downscale_ping *int8  `yaml:"downscale_pings"`
+		scale_interval *int   `yaml:"interval"`
 	}
 	ServerOptions map[string]ServerOption `yaml:"server_options"`
 }

@@ -22,24 +22,7 @@ type State struct {
 	rps  string
 	mem  string
 	srvs string
-}
-
-func createPayload(pS *State, nS State) []templ.Component {
-	payload := make([]templ.Component, 0)
-	if pS.rps != nS.rps {
-		pS.rps = nS.rps
-		payload = append(payload, update_status_item("rps", nS.rps))
-	}
-	if pS.mem != nS.mem {
-		pS.mem = nS.mem
-		payload = append(payload, update_status_item("mem", nS.mem))
-	}
-	if pS.srvs != nS.srvs {
-		pS.srvs = nS.srvs
-		payload = append(payload, update_status_item("srvs", nS.srvs))
-	}
-
-	return payload
+	cons string
 }
 
 func (m *manager) monitorDyno() {
@@ -47,15 +30,20 @@ func (m *manager) monitorDyno() {
 
 	for range ticker.C {
 
-		gh := graphUpdate(m)
+		if len(m.conn["main_dashboard"]) != 0 {
+			gh := graphUpdate(m)
 
-		rps := strconv.Itoa(gh.RPS)
-		mem := strconv.Itoa(gh.MEM)
-		total, active := getTotalPorts(m)
-		srvs := strconv.Itoa(active) + "/" + strconv.Itoa(total)
+			rps := strconv.Itoa(gh.RPS)
+			mem := strconv.Itoa(gh.MEM)
+			cons := strconv.Itoa(getConns(m.UrlMap))
+			total, active := getTotalPorts(m)
+			srvs := strconv.Itoa(active) + "/" + strconv.Itoa(total)
 
-		nS := State{rps, mem, srvs}
-		sendUpdate(m.conn["main_dashboard"], nS)
+			nS := State{rps, mem, srvs, cons}
+			sendUpdate(m.conn["main_dashboard"], nS)
+		}
+
+		pengraphUpdate(m)
 
 	}
 
@@ -64,6 +52,48 @@ func (m *manager) monitorDyno() {
 type graph_update struct {
 	RPS int `json:"rps"`
 	MEM int `json:"mem"`
+}
+
+type pen_Graph_Update struct {
+	Pens map[string]int `json:"pens"`
+}
+
+func pengraphUpdate(m *manager) {
+
+	if len(m.conn["pen_graph/Requests"]) != 0 {
+		pens := make(map[string]int, 0)
+		for pre, pen := range m.UrlMap {
+			pens[pre] = getRpsByPen(pen)
+		}
+
+		for _, client := range m.conn["pen_graph/Requests"] {
+			client.conn.WriteJSON(pens)
+		}
+	}
+
+	if len(m.conn["pen_graph/Memory"]) != 0 {
+		pens := make(map[string]int, 0)
+		for pre, pen := range m.UrlMap {
+			pens[pre] = memInfo(pen) / 1024 / 1024
+		}
+
+		for _, client := range m.conn["pen_graph/Memory"] {
+			client.conn.WriteJSON(pens)
+		}
+	}
+
+	if len(m.conn["/admin/ws/pen_graph/Connections"]) != 0 {
+
+		pens := make(map[string]int, 0)
+		for pre, pen := range m.UrlMap {
+			pens[pre] = pen.con
+		}
+
+		for _, client := range m.conn["pen_graph/Connections"] {
+			client.conn.WriteJSON(pens)
+		}
+	}
+
 }
 
 func graphUpdate(m *manager) graph_update {
@@ -95,11 +125,26 @@ func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
 	switch {
 	case url == "admin/":
 		res := index()
+		res.Render(context.Background(), w)
+	case url == "/admin/pen_dashboard/getpentable":
+		res := penTableItems(getPenFormatted(m))
+		res.Render(context.Background(), w)
+	case url == "/admin/pen_dashboard":
+		res := pen_dashboard(getPenFormatted(m))
+		res.Render(context.Background(), w)
+	case url == "/admin/main_dashboard":
+		res := main_dashboard()
+		res.Render(context.Background(), w)
 
+	case strings.HasPrefix(url, "/admin/pen_chart/"):
+		chartType := strings.TrimPrefix(url, "/admin/pen_chart/")
+		res := penChart(chartType)
 		res.Render(context.Background(), w)
 	case strings.HasPrefix(url, "/admin/ws"):
+
 		wsHandler(url, w, r, m)
 	default:
+		fmt.Println("default", url)
 		res := index()
 		res.Render(context.Background(), w)
 	}
