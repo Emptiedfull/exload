@@ -10,9 +10,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func main() {
-	tcpSocTestingMass()
-}
+// func main() {
+// 	tcpSocTestingMass()
+// }
 
 func tcpSocTestingMass() {
 	targetURL := "ws://localhost:43611/api/ws" // Replace with your target WebSocket URL

@@ -25,37 +25,38 @@ type State struct {
 	cons string
 }
 
-func (m *manager) monitorDyno() {
+func (m *manager) monitorDyno(quit <-chan bool) {
+	fmt.Println("monitor dyno started")
 	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-ticker.C:
+			if len(m.conn["main_dashboard"]) != 0 {
+				gh := graphUpdate(m)
 
-		if len(m.conn["main_dashboard"]) != 0 {
-			gh := graphUpdate(m)
+				rps := strconv.Itoa(gh.RPS)
+				mem := strconv.Itoa(gh.MEM)
+				cons := strconv.Itoa(getConns(m.UrlMap))
+				total, active := getTotalPorts(m)
+				srvs := strconv.Itoa(active) + "/" + strconv.Itoa(total)
 
-			rps := strconv.Itoa(gh.RPS)
-			mem := strconv.Itoa(gh.MEM)
-			cons := strconv.Itoa(getConns(m.UrlMap))
-			total, active := getTotalPorts(m)
-			srvs := strconv.Itoa(active) + "/" + strconv.Itoa(total)
+				nS := State{rps, mem, srvs, cons}
+				go sendUpdate(m.conn["main_dashboard"], nS)
+			}
 
-			nS := State{rps, mem, srvs, cons}
-			sendUpdate(m.conn["main_dashboard"], nS)
+			pengraphUpdate(m)
+		case <-quit:
+			fmt.Println("Monitor dyno killed")
+			return
 		}
-
-		pengraphUpdate(m)
-
 	}
-
 }
 
 type graph_update struct {
 	RPS int `json:"rps"`
 	MEM int `json:"mem"`
-}
-
-type pen_Graph_Update struct {
-	Pens map[string]int `json:"pens"`
 }
 
 func pengraphUpdate(m *manager) {
@@ -199,7 +200,7 @@ func wsHandler(url string, w http.ResponseWriter, r *http.Request, m *manager) {
 	}
 
 	path := url[10:]
-	fmt.Println(url)
+
 	m.conn[path] = append(m.conn[path], &client{conn, State{}})
 
 	for {

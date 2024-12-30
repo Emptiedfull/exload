@@ -8,11 +8,19 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+var con Config
+
 type Config struct {
-	Proxy_port     *int32  `yaml:"port"`
-	Static_path    *string `yaml:"static_path"`
-	Proxy_settings struct {
+	Proxy_port  *int32  `yaml:"port"`
+	Static_path *string `yaml:"static_path"`
+	Dynos       struct {
+		Scaler  bool `yaml:"scaler"`
+		Monitor bool `yaml:"monitor"`
+	}
+
+	Scaling_settings struct {
 		Max_load       *int32 `yaml:"max_load"`
+		Min_Load       *int   `yaml:"min_load"`
 		Upscale_ping   *int8  `yaml:"upscale_pings"`
 		Downscale_ping *int8  `yaml:"downscale_pings"`
 		scale_interval *int   `yaml:"interval"`
@@ -28,11 +36,12 @@ type ServerOption struct {
 	Max_servers     *int8    `yaml:"max_servers"`
 }
 
-func getConfig() (Config, error) {
+func getConfig() error {
 	var default_port int32 = 8080
 	default_static := "/static"
 	var default_max_servers int8 = int8(127)
 	var default_Max_load int32 = 100
+	var default_Min_load int = 90
 	var default_start_servers int8 = 2
 	var config Config
 	var default_pings int8 = 2
@@ -41,20 +50,20 @@ func getConfig() (Config, error) {
 	file, err := os.Open("config.yaml")
 	if err != nil {
 		fmt.Println("Error opening config file:", err)
-		return Config{}, err
+		return err
 	}
 	defer file.Close()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
 		fmt.Println("Error reading config file:", err)
-		return Config{}, err
+		return err
 	}
 
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
 		fmt.Println("huh")
-		return Config{}, err
+		return err
 	}
 
 	if config.Proxy_port == nil {
@@ -63,10 +72,6 @@ func getConfig() (Config, error) {
 
 	if config.Static_path == nil {
 		config.Static_path = &default_static
-	}
-
-	if config.Proxy_settings.Max_load == nil {
-		config.Proxy_settings.Max_load = &default_Max_load
 	}
 
 	for key, srv := range config.ServerOptions {
@@ -81,18 +86,28 @@ func getConfig() (Config, error) {
 		config.ServerOptions[key] = srv
 	}
 
-	if config.Proxy_settings.Downscale_ping == nil {
-		config.Proxy_settings.Downscale_ping = &default_pings
-	}
-	if config.Proxy_settings.Upscale_ping == nil {
-		config.Proxy_settings.Upscale_ping = &default_pings
+	if config.Scaling_settings.Max_load == nil {
+		config.Scaling_settings.Max_load = &default_Max_load
 	}
 
-	if config.Proxy_settings.scale_interval == nil {
-		config.Proxy_settings.scale_interval = &default_interval
+	fmt.Println("pings", config.Scaling_settings.Upscale_ping)
+
+	if config.Scaling_settings.Downscale_ping == nil {
+		config.Scaling_settings.Downscale_ping = &default_pings
+	}
+	if config.Scaling_settings.Upscale_ping == nil {
+		config.Scaling_settings.Upscale_ping = &default_pings
 	}
 
-	fmt.Println(*config.Proxy_settings.scale_interval)
+	if config.Scaling_settings.scale_interval == nil {
+		config.Scaling_settings.scale_interval = &default_interval
+	}
 
-	return config, nil
+	if config.Scaling_settings.Min_Load == nil {
+		config.Scaling_settings.Min_Load = &default_Min_load
+	}
+
+	con = config
+
+	return nil
 }

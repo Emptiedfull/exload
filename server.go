@@ -32,8 +32,6 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	s.req = s.req + 1
-
 	defer func() {
 		s.reqMu.Lock()
 		s.req = s.req + 1

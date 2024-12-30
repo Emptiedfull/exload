@@ -4,8 +4,8 @@ from collections import Counter
 import time
 import timeit
 
-URL = "http://localhost:37087/api/" 
-URL2 = "http://localhost:37087/admi/ping"  # Replace with your server URL
+URL = "http://localhost:33327/api/" 
+URL2 = "http://localhost:33327/api/ping"  # Replace with your server URL
 response_counter = Counter()
 
 

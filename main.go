@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,17 +18,16 @@ func main() {
 		os.RemoveAll(path)
 	}
 
-	config, err := getConfig()
+	err := getConfig()
+
 	if err != nil {
 		fmt.Println("Error loading config")
 		os.Exit(1)
 	}
 	c := NewCache(100)
 	// c.put("/api/ping", make([]byte, 5), 1*time.Hour)
-	m := NewManager(config)
+	m := NewManager()
 	defer m.file.Close()
-
-	fmt.Println("manager loaded")
 
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static", fs))
@@ -37,9 +37,23 @@ func main() {
 		http.ServeFile(w, r, "static/favicon.ico")
 	})
 
-	http.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/admin/enable-monitor", func(w http.ResponseWriter, r *http.Request) {
+		if m.monitorQuit != nil {
+			m.monitorQuit <- true
+			con.Dynos.Monitor = false
+		}
+	})
 
-		monitor(m, r.URL.String(), w, r)
+	http.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
+		if con.Dynos.Monitor {
+			monitor(m, r.URL.String(), w, r)
+		} else {
+
+			res := monitor_err()
+			res.Render(context.TODO(), w)
+
+		}
+
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +69,7 @@ func main() {
 	pid := os.Getpid()
 	fmt.Printf("The PID of this process is %d\n", pid)
 
-	port := strconv.Itoa(int(*config.Proxy_port))
+	port := strconv.Itoa(int(*con.Proxy_port))
 	fmt.Printf("Starting server on port %s\n", port)
 
 	err = http.ListenAndServe(":"+port, nil)

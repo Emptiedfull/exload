@@ -23,6 +23,8 @@ type manager struct {
 	conn    map[string][]*client
 
 	mu sync.RWMutex
+
+	monitorQuit chan<- bool
 }
 
 type client struct {
@@ -44,7 +46,7 @@ type command struct {
 	args []string
 }
 
-func NewManager(con Config) *manager {
+func NewManager() *manager {
 
 	logFile, err := os.OpenFile("logs/proxy.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
@@ -62,13 +64,26 @@ func NewManager(con Config) *manager {
 		conn:    make(map[string][]*client),
 	}
 
-	go m.Scaling_dyno(*con.Proxy_settings.Downscale_ping, *con.Proxy_settings.Upscale_ping, *con.Proxy_settings.scale_interval, int(*con.Proxy_settings.Max_load))
+	if con.Dynos.Scaler {
+		m.Scaling_dyno()
+	}
 
 	m.UrlMap = m.setupUrlMap(con.ServerOptions)
-	go m.monitorDyno()
+	if con.Dynos.Monitor {
+		m.startMonitorDyno()
+	}
+
 	go m.rpsDyno()
 
 	return m
+}
+
+func (m *manager) startMonitorDyno() {
+	ch := make(chan bool)
+
+	go m.monitorDyno(ch)
+
+	m.monitorQuit = ch
 }
 
 func (m *manager) setupUrlMap(s map[string]ServerOption) map[string]*pen {
@@ -338,18 +353,19 @@ func (m *manager) rpsDyno() {
 	}
 }
 
-func (m *manager) Scaling_dyno(d_pings int8, u_upings int8, interval int, m_load int) {
-	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+func (m *manager) Scaling_dyno() {
+	ticker := time.NewTicker(time.Duration(*con.Scaling_settings.scale_interval) * time.Second)
 
 	var descale int8 = 0
 	var upscale int8 = 0
 
-	var upscale_rate int8 = u_upings
-	var descale_rate int8 = d_pings
+	var upscale_rate int8 = *con.Scaling_settings.Upscale_ping
+	var descale_rate int8 = *con.Scaling_settings.Downscale_ping
 
 	go func() {
 
 		for range ticker.C {
+
 			for pre, pen := range m.UrlMap {
 
 				if len(pen.servers) > 0 {
@@ -361,9 +377,9 @@ func (m *manager) Scaling_dyno(d_pings int8, u_upings int8, interval int, m_load
 					if len(pen.servers) < int(pen.min_servers) {
 						go m.upscale(pre)
 					}
-
-					if load > m_load {
-						descale = 0
+					fmt.Println(upscale, descale, load)
+					if load > int(*con.Scaling_settings.Max_load) {
+						descale--
 						upscale++
 
 						if upscale >= upscale_rate {
@@ -373,8 +389,8 @@ func (m *manager) Scaling_dyno(d_pings int8, u_upings int8, interval int, m_load
 						}
 					}
 
-					if load < m_load {
-						upscale = 0
+					if load < int(*con.Scaling_settings.Min_Load) {
+						upscale--
 						descale++
 
 						if descale >= descale_rate {
