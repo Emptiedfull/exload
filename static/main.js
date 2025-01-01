@@ -5,7 +5,7 @@ if (socket){
     socket.close()
 }
 
-    var socket = new WebSocket("/admin/ws/main_graph")
+    var socket = new WebSocket("/ws/main_graph")
 
     var ctx = document.getElementById('myChart').getContext('2d');
     var myChart = new Chart(ctx, {

@@ -7,7 +7,7 @@
         socket.close()
     }
 
-    var socket = new WebSocket("/admin/ws/pen_graph/"+document.querySelector(".active").innerHTML)
+    var socket = new WebSocket("/ws/pen_graph/"+document.querySelector(".active").innerHTML)
 
     var ctx = document.getElementById('penChart').getContext('2d');
     var myChart = new Chart(ctx, {

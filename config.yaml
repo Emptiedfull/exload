@@ -1,8 +1,9 @@
-port: 33327
+proxy_port: 8000
+admin_port: 9000
 static_path: "/static"
 dynos: 
-  scaler: false
-  monitor: false
+  scaler: true
+  monitor: true
   
 scaling_settings:
   max_load: 50
@@ -12,14 +13,14 @@ scaling_settings:
   interval : 1
 
 server_options:
-  server1:
+  server2:
     prefix: /api
     command: venv/bin/uvicorn
     args: ["server:app","--uds","<sock>"]
     startup_servers: 1
     max_servers: 4
-  server2:
-    prefix: /admi
+  server1:
+    prefix: /admin
     command: venv/bin/uvicorn
     args: ["server:app","--uds","<sock>"]
     startup_servers: 1

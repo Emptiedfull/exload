@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +10,8 @@ import (
 )
 
 func main() {
+
+	adminServer := http.NewServeMux()
 
 	logs, _ := os.ReadDir("./logs/server_logs")
 	for _, file := range logs {
@@ -30,29 +31,16 @@ func main() {
 	defer m.file.Close()
 
 	fs := http.FileServer(http.Dir("./static"))
-	http.Handle("/static/", http.StripPrefix("/static", fs))
+	adminServer.Handle("/static/", http.StripPrefix("/static", fs))
 
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 
 		http.ServeFile(w, r, "static/favicon.ico")
 	})
 
-	http.HandleFunc("/admin/enable-monitor", func(w http.ResponseWriter, r *http.Request) {
-		if m.monitorQuit != nil {
-			m.monitorQuit <- true
-			con.Dynos.Monitor = false
-		}
-	})
+	adminServer.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
-	http.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
-		if con.Dynos.Monitor {
-			monitor(m, r.URL.String(), w, r)
-		} else {
-
-			res := monitor_err()
-			res.Render(context.TODO(), w)
-
-		}
+		monitor(m, r.URL.String(), w, r)
 
 	})
 
@@ -71,6 +59,10 @@ func main() {
 
 	port := strconv.Itoa(int(*con.Proxy_port))
 	fmt.Printf("Starting server on port %s\n", port)
+
+	go func() {
+		err = http.ListenAndServe(":"+strconv.Itoa(*con.Admin_port), adminServer)
+	}()
 
 	err = http.ListenAndServe(":"+port, nil)
 	if err != nil {

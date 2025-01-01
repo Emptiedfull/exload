@@ -32,11 +32,9 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	defer func() {
-		s.reqMu.Lock()
-		s.req = s.req + 1
-		s.reqMu.Unlock()
-	}()
+	s.reqMu.Lock()
+	s.req = s.req + 1
+	s.reqMu.Unlock()
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {

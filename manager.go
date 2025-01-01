@@ -25,6 +25,7 @@ type manager struct {
 	mu sync.RWMutex
 
 	monitorQuit chan<- bool
+	scalerQuit  chan<- bool
 }
 
 type client struct {
@@ -65,25 +66,70 @@ func NewManager() *manager {
 	}
 
 	if con.Dynos.Scaler {
-		m.Scaling_dyno()
+		m.startScaleDyno(true)
 	}
 
 	m.UrlMap = m.setupUrlMap(con.ServerOptions)
 	if con.Dynos.Monitor {
-		m.startMonitorDyno()
+		m.startMonitorDyno(true)
 	}
 
-	go m.rpsDyno()
+	if con.Dynos.Monitor || con.Dynos.Scaler {
+		go m.rpsDyno()
+	}
 
 	return m
 }
 
-func (m *manager) startMonitorDyno() {
-	ch := make(chan bool)
+func (m *manager) startMonitorDyno(force bool) {
+	if !con.Dynos.Monitor || force {
+		ch := make(chan bool)
+		con.Dynos.Monitor = true
+		go m.monitorDyno(ch)
+		m.monitorQuit = ch
+	}
 
-	go m.monitorDyno(ch)
+}
 
-	m.monitorQuit = ch
+func (m *manager) EndMonitorDyno() {
+	if con.Dynos.Monitor {
+		con.Dynos.Monitor = false
+		m.monitorQuit <- true
+		m.monitorQuit = nil
+	}
+}
+
+func (m *manager) startScaleDyno(force bool) {
+	if !con.Dynos.Scaler || force {
+		ch := make(chan bool)
+		con.Dynos.Scaler = true
+		go m.Scaling_dyno(ch)
+		m.scalerQuit = ch
+	}
+}
+
+func (m *manager) endScaleDyno() {
+	if con.Dynos.Scaler {
+		m.scalerQuit <- true
+		con.Dynos.Scaler = false
+		m.scalerQuit = nil
+	}
+}
+
+func (m *manager) toggleScaleDyno() {
+	if con.Dynos.Scaler {
+		m.endScaleDyno()
+	} else {
+		m.startScaleDyno(false)
+	}
+}
+
+func (m *manager) toggleMonitorDyno() {
+	if con.Dynos.Monitor {
+		m.EndMonitorDyno()
+	} else {
+		m.startMonitorDyno(false)
+	}
 }
 
 func (m *manager) setupUrlMap(s map[string]ServerOption) map[string]*pen {
@@ -92,8 +138,7 @@ func (m *manager) setupUrlMap(s map[string]ServerOption) map[string]*pen {
 	var mu sync.Mutex
 
 	for _, ser := range s {
-		fmt.Println(ser.Prefix, ser.Command, ser.Args)
-
+		fmt.Println(ser.Prefix)
 		var srvArr = make([]*server, 0)
 		for i := 0; i < int(*ser.Startup_servers); i++ {
 			wg.Add(1)
@@ -263,6 +308,7 @@ func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request, cach
 		pen, ok := m.UrlMap[dest]
 		if !ok || pen == nil {
 			http.Error(w, "Destination not found", http.StatusNotFound)
+			fmt.Println(dest)
 			return
 		}
 
@@ -342,6 +388,7 @@ func (m *manager) rpsDyno() {
 			for _, srv := range pen.servers {
 				srv.rpsMu.Lock()
 				srv.rps = srv.req
+
 				srv.rpsMu.Unlock()
 
 				srv.reqMu.Lock()
@@ -353,58 +400,68 @@ func (m *manager) rpsDyno() {
 	}
 }
 
-func (m *manager) Scaling_dyno() {
+type scale_pings struct {
+	upscale int
+	descale int
+}
+
+func (m *manager) Scaling_dyno(quit <-chan bool) {
+	fmt.Println("scale dyno started")
 	ticker := time.NewTicker(time.Duration(*con.Scaling_settings.scale_interval) * time.Second)
 
-	var descale int8 = 0
-	var upscale int8 = 0
+	pings := make(map[string]scale_pings, 0)
 
-	var upscale_rate int8 = *con.Scaling_settings.Upscale_ping
-	var descale_rate int8 = *con.Scaling_settings.Downscale_ping
+	var upscale_rate int = *con.Scaling_settings.Upscale_ping
+	var descale_rate int = *con.Scaling_settings.Downscale_ping
 
-	go func() {
+	for {
+		select {
+		case <-quit:
+			fmt.Println("Scaling dyno killed")
+			return
 
-		for range ticker.C {
-
+		case <-ticker.C:
 			for pre, pen := range m.UrlMap {
 
 				if len(pen.servers) > 0 {
+					descale := pings[pre].descale
+					upscale := pings[pre].upscale
+
 					pen.conMu.RLock()
 					load := getRpsByPen(pen) / len(pen.servers)
-
 					pen.conMu.RUnlock()
 
 					if len(pen.servers) < int(pen.min_servers) {
 						go m.upscale(pre)
 					}
-					fmt.Println(upscale, descale, load)
+
 					if load > int(*con.Scaling_settings.Max_load) {
-						descale--
+
 						upscale++
 
 						if upscale >= upscale_rate {
-
 							upscale = 0
 							go m.upscale(pre)
 						}
 					}
 
 					if load < int(*con.Scaling_settings.Min_Load) {
-						upscale--
 						descale++
 
 						if descale >= descale_rate {
-
 							descale = 0
-							m.descale(pre)
+							go m.descale(pre)
 						}
 					}
+
+					pings[pre] = scale_pings{upscale: upscale, descale: descale}
+				} else {
+					go m.upscale(pre)
 				}
 
 			}
-
 		}
-	}()
+	}
 
 }
 

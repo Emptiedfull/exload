@@ -9,14 +9,14 @@ import (
 )
 
 func main() {
-	url := "http://localhost:33327/api/ping"
+	url := "http://localhost:8000/api/"
 	iterations := 10000
 
 	start := time.Now()
 
 	var errors atomic.Uint64
 	var wg sync.WaitGroup
-	for i := 1; i < iterations; i++ {
+	for i := 1; i <= iterations; i++ {
 		wg.Add(1)
 
 		go func() {
