@@ -11,7 +11,7 @@ import (
 var con Config
 
 type Config struct {
-	Admin_port  *int    `yaml:"admin_port`
+	Admin_port  *int    `yaml:"admin_port"`
 	Proxy_port  *int32  `yaml:"proxy_port"`
 	Static_path *string `yaml:"static_path"`
 	Dynos       struct {
@@ -24,9 +24,21 @@ type Config struct {
 		Min_Load       *int   `yaml:"min_load"`
 		Upscale_ping   *int   `yaml:"upscale_pings"`
 		Downscale_ping *int   `yaml:"downscale_pings"`
-		scale_interval *int   `yaml:"interval"`
+		Scale_interval *int   `yaml:"interval"`
 	}
 	ServerOptions map[string]ServerOption `yaml:"server_options"`
+	Statics       Statics                 `yaml:"statics"`
+}
+
+type Statics struct {
+	Fileserver     *string                    `yaml:"fileserver"`
+	Static_servers map[string]*static_servers `yaml:"servers"`
+}
+
+type static_servers struct {
+	Basis  string `yaml:"type"`
+	Access string `yaml:"access"`
+	Prefix string `yaml:"prefix"`
 }
 
 type ServerOption struct {
@@ -64,7 +76,7 @@ func getConfig() error {
 
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		fmt.Println("huh")
+		fmt.Println("huh", err)
 		return err
 	}
 
@@ -105,8 +117,8 @@ func getConfig() error {
 		config.Scaling_settings.Upscale_ping = &default_pings
 	}
 
-	if config.Scaling_settings.scale_interval == nil {
-		config.Scaling_settings.scale_interval = &default_interval
+	if config.Scaling_settings.Scale_interval == nil {
+		config.Scaling_settings.Scale_interval = &default_interval
 	}
 
 	if config.Scaling_settings.Min_Load == nil {

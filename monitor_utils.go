@@ -63,6 +63,8 @@ func totalMem(u map[string]*pen) int {
 		return mem
 	}
 
+	fmt.Println(mem/1024/1024, int(m.RSS)/1024/1024, os.Getpid())
+
 	mem += int(m.RSS)
 
 	memMB := mem / 1024 / 1024
@@ -90,11 +92,8 @@ func getTotalPorts(m *manager) (int, int) {
 }
 
 func getRpsByServer(s *server) int {
-	res := 0
-	s.rpsMu.RLock()
-	res += s.rps
-	s.rpsMu.RUnlock()
-	return res
+
+	return int(s.req.Load())
 }
 
 func getRpsByPen(p *pen) int {
@@ -117,7 +116,7 @@ func TotalRps(u map[string]*pen) int {
 func getConns(u map[string]*pen) int {
 	res := 0
 	for _, pen := range u {
-		res += pen.con
+		res += int(pen.con.Load())
 	}
 	return res
 }

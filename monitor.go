@@ -164,7 +164,7 @@ func pengraphUpdate(m *manager) {
 
 		pens := make(map[string]int, 0)
 		for pre, pen := range m.UrlMap {
-			pens[pre] = pen.con
+			pens[pre] = int(pen.con.Load())
 		}
 
 		for _, client := range m.conn["pen_graph/Connections"] {

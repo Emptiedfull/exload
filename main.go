@@ -25,7 +25,7 @@ func main() {
 		fmt.Println("Error loading config")
 		os.Exit(1)
 	}
-	c := NewCache(100)
+	c := NewCache(1)
 	// c.put("/api/ping", make([]byte, 5), 1*time.Hour)
 	m := NewManager()
 	defer m.file.Close()
@@ -63,6 +63,11 @@ func main() {
 	go func() {
 		err = http.ListenAndServe(":"+strconv.Itoa(*con.Admin_port), adminServer)
 	}()
+
+	if con.Statics.Fileserver != nil {
+		fs := http.FileServer(http.Dir(*con.Statics.Fileserver))
+		http.Handle("/static/", http.StripPrefix("/static", fs))
+	}
 
 	err = http.ListenAndServe(":"+port, nil)
 	if err != nil {

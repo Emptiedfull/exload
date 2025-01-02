@@ -3,12 +3,14 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fatih/color"
@@ -16,11 +18,12 @@ import (
 )
 
 type manager struct {
-	host    string
-	logFile *log.Logger
-	file    *os.File
-	UrlMap  map[string]*pen
-	conn    map[string][]*client
+	host      string
+	logFile   *log.Logger
+	file      *os.File
+	UrlMap    map[string]*pen
+	StaticMap map[string]*string
+	conn      map[string][]*client
 
 	mu sync.RWMutex
 
@@ -38,8 +41,7 @@ type pen struct {
 	min_servers int8
 	servers     []*server
 	command     command
-	con         int
-	conMu       sync.RWMutex
+	con         atomic.Int32
 }
 
 type command struct {
@@ -57,12 +59,13 @@ func NewManager() *manager {
 	logger := log.New(logFile, "", log.LstdFlags)
 
 	m := &manager{
-		logFile: logger,
-		host:    "0.0.0.0",
-		file:    logFile,
-		UrlMap:  make(map[string]*pen),
-		mu:      sync.RWMutex{},
-		conn:    make(map[string][]*client),
+		logFile:   logger,
+		host:      "0.0.0.0",
+		file:      logFile,
+		UrlMap:    make(map[string]*pen),
+		mu:        sync.RWMutex{},
+		conn:      make(map[string][]*client),
+		StaticMap: make(map[string]*string),
 	}
 
 	if con.Dynos.Scaler {
@@ -70,6 +73,7 @@ func NewManager() *manager {
 	}
 
 	m.UrlMap = m.setupUrlMap(con.ServerOptions)
+	m.setupStatic()
 	if con.Dynos.Monitor {
 		m.startMonitorDyno(true)
 	}
@@ -157,11 +161,26 @@ func (m *manager) setupUrlMap(s map[string]ServerOption) map[string]*pen {
 
 		wg.Wait()
 
-		m.UrlMap[ser.Prefix] = &pen{servers: srvArr, command: command{com: ser.Command, args: ser.Args}, con: 0, max_servers: 4, min_servers: *ser.Startup_servers, conMu: sync.RWMutex{}}
+		m.UrlMap[ser.Prefix] = &pen{servers: srvArr, command: command{com: ser.Command, args: ser.Args}, max_servers: 4, min_servers: *ser.Startup_servers}
 
 	}
 
 	return m.UrlMap
+}
+
+func (m *manager) setupStatic() {
+	fmt.Println(con.Statics.Static_servers)
+	for _, srv := range con.Statics.Static_servers {
+		var dest string
+		switch srv.Basis {
+		case "port":
+			dest = "http://localhost:" + srv.Access
+		case "external":
+			dest = srv.Access
+		}
+
+		m.StaticMap[srv.Prefix] = &dest
+	}
 }
 
 func (m *manager) logStr(s ...interface{}) {
@@ -213,7 +232,7 @@ func (m *manager) create(sock string, cmd *exec.Cmd, done chan<- *server) {
 	}
 
 	// s := &server{url, port, cmd, "/", 0, sync.RWMutex{}, sync.RWMutex{}}
-	s := &server{sock: sock, cmd: cmd, prefix: "/", req: 0, reqMu: sync.RWMutex{}, mu: sync.RWMutex{}, conMu: sync.RWMutex{}, rpsMu: sync.RWMutex{}}
+	s := &server{sock: sock, cmd: cmd, prefix: "/"}
 
 	ch := make(chan string)
 	go wait_for_startup(s, ch)
@@ -286,17 +305,19 @@ func (m *manager) gen_one(comm command) (*server, error) {
 func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request, cache *Cache) {
 
 	hit, val := ReadThrough(r, cache)
+	// start := time.Now()
+	// defer func() {
+
+	// }()
 
 	if hit {
 		w.Write(val)
-
 	} else {
 
 		parts := strings.SplitN(url, "/", -1)
 
 		if len(parts) < 3 {
 			http.Error(w, "Invalid URL format", http.StatusBadRequest)
-			fmt.Println(parts)
 			return
 		}
 		path := "/" + strings.Join(parts[2:], "/")
@@ -305,16 +326,56 @@ func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request, cach
 		m.mu.RLock()
 		defer m.mu.RUnlock()
 
-		pen, ok := m.UrlMap[dest]
-		if !ok || pen == nil {
-			http.Error(w, "Destination not found", http.StatusNotFound)
-			fmt.Println(dest)
+		pen := m.UrlMap[dest]
+		if pen == nil {
+			stat := m.StaticMap[dest]
+			if stat == nil {
+				fmt.Println("destination not found", dest, m.StaticMap)
+				w.Write([]byte("DESTINATION NOT FOUND"))
+				return
+			}
+
+			client := http.DefaultClient
+
+			url := *stat + path
+
+			req, err := http.NewRequest(r.Method, url, nil)
+			if err != nil {
+				fmt.Println("error making request")
+				m.logErr("BAD REQUEST", err)
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Couldnt make request"))
+				return
+			}
+
+			resp, err := client.Do(req)
+			if err != nil {
+				fmt.Println("error sending request")
+				m.logErr("BAD REQUEST", err)
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Couldnt make request"))
+				return
+			}
+
+			defer resp.Body.Close()
+
+			body, _ := io.ReadAll(resp.Body)
+
+			for name, values := range resp.Header {
+				for _, value := range values {
+					w.Header().Add(name, value)
+
+				}
+			}
+
+			for _, cookie := range resp.Cookies() {
+				http.SetCookie(w, cookie)
+			}
+
+			WriteThrough(r, w, cache, body)
+
 			return
 		}
-
-		// pen.conMu.Lock()
-		// pen.con++
-		// pen.conMu.Unlock()
 
 		srv_options := pen.servers
 		if len(srv_options) == 0 {
@@ -327,9 +388,9 @@ func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request, cach
 		var min int = int(^uint(0) >> 1)
 
 		for _, srv := range srv_options {
-			if srv.req < min {
+			if int(srv.req.Load()) < min {
 				lcs = srv
-				min = srv.req
+				min = int(srv.req.Load())
 
 			}
 		}
@@ -340,9 +401,6 @@ func (m *manager) proxy(url string, w http.ResponseWriter, r *http.Request, cach
 
 		lcs.request(path, w, r, cache)
 
-		// pen.conMu.Lock()
-		// pen.con = pen.con - 1
-		// pen.conMu.Unlock()
 	}
 
 }
@@ -386,14 +444,9 @@ func (m *manager) rpsDyno() {
 	for range ticker.C {
 		for _, pen := range m.UrlMap {
 			for _, srv := range pen.servers {
-				srv.rpsMu.Lock()
-				srv.rps = srv.req
 
-				srv.rpsMu.Unlock()
+				srv.rps.Store(srv.req.Swap(0))
 
-				srv.reqMu.Lock()
-				srv.req = 0
-				srv.reqMu.Unlock()
 			}
 
 		}
@@ -406,8 +459,8 @@ type scale_pings struct {
 }
 
 func (m *manager) Scaling_dyno(quit <-chan bool) {
-	fmt.Println("scale dyno started")
-	ticker := time.NewTicker(time.Duration(*con.Scaling_settings.scale_interval) * time.Second)
+	fmt.Println("scale dyno started", *con.Scaling_settings.Scale_interval)
+	ticker := time.NewTicker(time.Duration(*con.Scaling_settings.Scale_interval) * time.Second)
 
 	pings := make(map[string]scale_pings, 0)
 
@@ -427,20 +480,19 @@ func (m *manager) Scaling_dyno(quit <-chan bool) {
 					descale := pings[pre].descale
 					upscale := pings[pre].upscale
 
-					pen.conMu.RLock()
 					load := getRpsByPen(pen) / len(pen.servers)
-					pen.conMu.RUnlock()
 
 					if len(pen.servers) < int(pen.min_servers) {
 						go m.upscale(pre)
 					}
 
 					if load > int(*con.Scaling_settings.Max_load) {
-
+						fmt.Println("pinging upscale")
 						upscale++
 
 						if upscale >= upscale_rate {
 							upscale = 0
+
 							go m.upscale(pre)
 						}
 					}
@@ -449,6 +501,7 @@ func (m *manager) Scaling_dyno(quit <-chan bool) {
 						descale++
 
 						if descale >= descale_rate {
+							fmt.Println("descaling")
 							descale = 0
 							go m.descale(pre)
 						}

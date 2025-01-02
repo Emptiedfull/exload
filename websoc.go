@@ -39,15 +39,13 @@ func (m *manager) proxyWebSocket(w http.ResponseWriter, r *http.Request, url str
 	}
 
 	for _, srv := range srvs {
-		if srv.con < min {
+		if int(srv.con.Load()) < min {
 			lcs = srv
-			min = srv.con
+			min = int(srv.con.Load())
 		}
 	}
 
-	lcs.conMu.Lock()
-	lcs.con++
-	lcs.conMu.Unlock()
+	lcs.con.Add(1)
 
 	socPath := lcs.sock
 	fmt.Println("sening to", socPath)
@@ -91,9 +89,7 @@ func relay(dst, srv *websocket.Conn, p *pen, s *server) {
 	defer dst.Close()
 	defer srv.Close()
 
-	p.conMu.Lock()
-	p.con++
-	p.conMu.Unlock()
+	p.con.Add(1)
 
 	for {
 		messageType, message, err := srv.ReadMessage()
@@ -110,11 +106,7 @@ func relay(dst, srv *websocket.Conn, p *pen, s *server) {
 
 	}
 
-	p.conMu.Lock()
-	p.con--
-	p.conMu.Unlock()
+	p.con.Add(-1)
+	s.con.Add(-1)
 
-	s.conMu.Lock()
-	s.con--
-	s.conMu.Unlock()
 }

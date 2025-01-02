@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,15 +17,11 @@ type server struct {
 	cmd    *exec.Cmd
 	prefix string
 
-	req int
-	con int
+	req atomic.Int32
+	con atomic.Int32
+	rps atomic.Int32
 
-	rps int
-
-	mu    sync.RWMutex
-	reqMu sync.RWMutex
-	rpsMu sync.RWMutex
-	conMu sync.RWMutex
+	mu sync.RWMutex
 }
 
 func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *Cache) {
@@ -32,9 +29,7 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	s.reqMu.Lock()
-	s.req = s.req + 1
-	s.reqMu.Unlock()
+	s.req.Add(1)
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -46,7 +41,7 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *
 		Transport: transport,
 	}
 
-	req, err := http.NewRequest("GET", "http://unix"+url, nil)
+	req, err := http.NewRequest(r.Method, "http://unix"+url, nil)
 	if err != nil {
 		http.Error(w, "Failed to request", http.StatusInternalServerError)
 		return
