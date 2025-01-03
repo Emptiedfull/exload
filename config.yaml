@@ -1,27 +1,43 @@
-port: 33327
+proxy_port: 8000
+admin_port: 9000
 static_path: "/static"
 dynos: 
-  scaler: false
-  monitor: false
+  scaler: true
+  monitor: true
   
 scaling_settings:
   max_load: 50
-  min_load: 50
+  min_load: 10
   upscale_pings: 5
-  downscale_pings : 30
+  downscale_pings : 600
   interval : 1
 
 server_options:
-  server1:
+  server2:
     prefix: /api
     command: venv/bin/uvicorn
     args: ["server:app","--uds","<sock>"]
-    startup_servers: 1
-    max_servers: 4
-  server2:
-    prefix: /admi
+    startup_servers: 4
+    max_servers: 6
+  server1:
+    prefix: /admin
     command: venv/bin/uvicorn
     args: ["server:app","--uds","<sock>"]
     startup_servers: 1
     max_servers: 4
+
+statics:
+  fileserver: "static"
+  servers:
+    joker:
+      type: "port"
+      access: "8001"
+      prefix : '/joker'
+    koker: 
+      type: "external"
+      access: "http://google.com"
+      prefix: "/koker"
+
+  
+  
   

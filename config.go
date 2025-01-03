@@ -11,7 +11,8 @@ import (
 var con Config
 
 type Config struct {
-	Proxy_port  *int32  `yaml:"port"`
+	Admin_port  *int    `yaml:"admin_port"`
+	Proxy_port  *int32  `yaml:"proxy_port"`
 	Static_path *string `yaml:"static_path"`
 	Dynos       struct {
 		Scaler  bool `yaml:"scaler"`
@@ -21,11 +22,23 @@ type Config struct {
 	Scaling_settings struct {
 		Max_load       *int32 `yaml:"max_load"`
 		Min_Load       *int   `yaml:"min_load"`
-		Upscale_ping   *int8  `yaml:"upscale_pings"`
-		Downscale_ping *int8  `yaml:"downscale_pings"`
-		scale_interval *int   `yaml:"interval"`
+		Upscale_ping   *int   `yaml:"upscale_pings"`
+		Downscale_ping *int   `yaml:"downscale_pings"`
+		Scale_interval *int   `yaml:"interval"`
 	}
 	ServerOptions map[string]ServerOption `yaml:"server_options"`
+	Statics       Statics                 `yaml:"statics"`
+}
+
+type Statics struct {
+	Fileserver     *string                    `yaml:"fileserver"`
+	Static_servers map[string]*static_servers `yaml:"servers"`
+}
+
+type static_servers struct {
+	Basis  string `yaml:"type"`
+	Access string `yaml:"access"`
+	Prefix string `yaml:"prefix"`
 }
 
 type ServerOption struct {
@@ -37,6 +50,7 @@ type ServerOption struct {
 }
 
 func getConfig() error {
+	var default_admin_port int = 9000
 	var default_port int32 = 8080
 	default_static := "/static"
 	var default_max_servers int8 = int8(127)
@@ -44,7 +58,7 @@ func getConfig() error {
 	var default_Min_load int = 90
 	var default_start_servers int8 = 2
 	var config Config
-	var default_pings int8 = 2
+	var default_pings int = 2
 	var default_interval int = 3
 
 	file, err := os.Open("config.yaml")
@@ -62,12 +76,16 @@ func getConfig() error {
 
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		fmt.Println("huh")
+		fmt.Println("huh", err)
 		return err
 	}
 
 	if config.Proxy_port == nil {
 		config.Proxy_port = &default_port
+	}
+
+	if config.Admin_port == nil {
+		config.Admin_port = &default_admin_port
 	}
 
 	if config.Static_path == nil {
@@ -99,8 +117,8 @@ func getConfig() error {
 		config.Scaling_settings.Upscale_ping = &default_pings
 	}
 
-	if config.Scaling_settings.scale_interval == nil {
-		config.Scaling_settings.scale_interval = &default_interval
+	if config.Scaling_settings.Scale_interval == nil {
+		config.Scaling_settings.Scale_interval = &default_interval
 	}
 
 	if config.Scaling_settings.Min_Load == nil {

@@ -329,5 +329,34 @@ body{
 }
 
 
+.pen-dynos{
+    margin-top:1.2rem;
+    display:flex;
+    flex-direction: column;
+    gap:0.4rem
+}
+
+.pen-dyno{
+    font-size:1.3rem;
+    color:rgba(255, 255, 255, 0.40);
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.status{
+    height: 15px;
+    border-radius: 50%;
+    width:15px;
+}
+
+.green{
+    background-color: green;
+}
+
+.red{
+    background-color: red;
+}
 
 

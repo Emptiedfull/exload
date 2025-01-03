@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -52,18 +51,18 @@ func totalMem(u map[string]*pen) int {
 		mem += memInfo(pen)
 
 	}
-	p, err := process.NewProcess(int32(os.Getpid()))
-	if err != nil {
-		fmt.Println("error reading parent mem")
-		return mem
-	}
-	m, err := p.MemoryInfo()
-	if err != nil {
-		fmt.Println("Error reading parent mem")
-		return mem
-	}
+	// // p, err := process.NewProcess(int32(os.Getpid()))
+	// if err != nil {
+	// 	fmt.Println("error reading parent mem")
+	// 	return mem
+	// }
+	// // m, err := p.MemoryInfo()
+	// if err != nil {
+	// 	fmt.Println("Error reading parent mem")
+	// 	return mem
+	// }
 
-	mem += int(m.RSS)
+	// mem += int(m.RSS)
 
 	memMB := mem / 1024 / 1024
 
@@ -90,11 +89,8 @@ func getTotalPorts(m *manager) (int, int) {
 }
 
 func getRpsByServer(s *server) int {
-	res := 0
-	s.rpsMu.RLock()
-	res += s.rps
-	s.rpsMu.RUnlock()
-	return res
+
+	return int(s.req.Load())
 }
 
 func getRpsByPen(p *pen) int {
@@ -117,7 +113,7 @@ func TotalRps(u map[string]*pen) int {
 func getConns(u map[string]*pen) int {
 	res := 0
 	for _, pen := range u {
-		res += pen.con
+		res += int(pen.con.Load())
 	}
 	return res
 }

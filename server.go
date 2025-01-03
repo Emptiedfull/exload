@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,15 +17,13 @@ type server struct {
 	cmd    *exec.Cmd
 	prefix string
 
-	req int
-	con int
+	client *http.Client
 
-	rps int
+	req atomic.Int32
+	con atomic.Int32
+	rps atomic.Int32
 
-	mu    sync.RWMutex
-	reqMu sync.RWMutex
-	rpsMu sync.RWMutex
-	conMu sync.RWMutex
+	mu sync.RWMutex
 }
 
 func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *Cache) {
@@ -32,23 +31,9 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	defer func() {
-		s.reqMu.Lock()
-		s.req = s.req + 1
-		s.reqMu.Unlock()
-	}()
+	s.req.Add(1)
 
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("unix", s.sock)
-		},
-	}
-
-	client := &http.Client{
-		Transport: transport,
-	}
-
-	req, err := http.NewRequest("GET", "http://unix"+url, nil)
+	req, err := http.NewRequest(r.Method, "http://unix"+url, nil)
 	if err != nil {
 		http.Error(w, "Failed to request", http.StatusInternalServerError)
 		return
@@ -64,7 +49,7 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *
 		req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
 	}
 
-	resp, err := client.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		s.request(url, w, r, c)
 		return

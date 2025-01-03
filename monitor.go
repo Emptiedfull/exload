@@ -25,6 +25,82 @@ type State struct {
 	cons string
 }
 
+func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
+
+	switch {
+	case url == "/":
+		if con.Dynos.Monitor {
+			res := index()
+			res.Render(context.Background(), w)
+		} else {
+			res := monitor_err()
+			res.Render(context.TODO(), w)
+
+		}
+	case url == "/pen_dashboard/getpentable":
+		res := penTableItems(getPenFormatted(m))
+		res.Render(context.Background(), w)
+	case url == "/pen_dashboard":
+		res := pen_dashboard(getPenFormatted(m))
+		res.Render(context.Background(), w)
+	case url == "/main_dashboard":
+		res := main_dashboard()
+		res.Render(context.Background(), w)
+	case strings.HasPrefix(url, "/toggle"):
+		t := strings.TrimPrefix(url, "/toggle")
+		switch t {
+		case "monitor":
+			m.toggleMonitorDyno()
+			res := statusUpdate("monitor", con.Dynos.Monitor)
+			res.Render(context.Background(), w)
+		case "scale":
+			m.toggleScaleDyno()
+			res := statusUpdate("scale", con.Dynos.Scaler)
+			res.Render(context.Background(), w)
+		}
+
+	case url == "/enableMonitor":
+		m.startMonitorDyno(false)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Monitor enabled"))
+	case url == "/disableMonitor":
+		m.EndMonitorDyno()
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte("monitor disable"))
+	case url == "/disableScale":
+		m.endScaleDyno()
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte("scaler disable"))
+	case url == "/enableScale":
+		m.startScaleDyno(false)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("scaler enabled"))
+	case strings.HasPrefix(url, "/pen_chart/"):
+		chartType := strings.TrimPrefix(url, "/pen_chart/")
+		res := penChart(chartType)
+		res.Render(context.Background(), w)
+	case strings.HasPrefix(url, "/status/"):
+		t := strings.TrimPrefix(url, "/status/")
+		switch t {
+		case "monitor":
+			res := statusUpdate("monitor", con.Dynos.Monitor)
+			res.Render(context.Background(), w)
+		case "scale":
+			res := statusUpdate("scale", con.Dynos.Scaler)
+			res.Render(context.Background(), w)
+		}
+
+	case strings.HasPrefix(url, "/ws"):
+
+		wsHandler(url, w, r, m)
+	default:
+		fmt.Println(url)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("404 not found"))
+	}
+
+}
+
 func (m *manager) monitorDyno(quit <-chan bool) {
 	fmt.Println("monitor dyno started")
 	ticker := time.NewTicker(1 * time.Second)
@@ -34,6 +110,7 @@ func (m *manager) monitorDyno(quit <-chan bool) {
 		select {
 		case <-ticker.C:
 			if len(m.conn["main_dashboard"]) != 0 {
+
 				gh := graphUpdate(m)
 
 				rps := strconv.Itoa(gh.RPS)
@@ -87,7 +164,7 @@ func pengraphUpdate(m *manager) {
 
 		pens := make(map[string]int, 0)
 		for pre, pen := range m.UrlMap {
-			pens[pre] = pen.con
+			pens[pre] = int(pen.con.Load())
 		}
 
 		for _, client := range m.conn["pen_graph/Connections"] {
@@ -119,37 +196,6 @@ func sendUpdate(clients []*client, state State) {
 		}
 		sendMass(client.conn, payload)
 	}
-}
-
-func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
-
-	switch {
-	case url == "admin/":
-		res := index()
-		res.Render(context.Background(), w)
-	case url == "/admin/pen_dashboard/getpentable":
-		res := penTableItems(getPenFormatted(m))
-		res.Render(context.Background(), w)
-	case url == "/admin/pen_dashboard":
-		res := pen_dashboard(getPenFormatted(m))
-		res.Render(context.Background(), w)
-	case url == "/admin/main_dashboard":
-		res := main_dashboard()
-		res.Render(context.Background(), w)
-
-	case strings.HasPrefix(url, "/admin/pen_chart/"):
-		chartType := strings.TrimPrefix(url, "/admin/pen_chart/")
-		res := penChart(chartType)
-		res.Render(context.Background(), w)
-	case strings.HasPrefix(url, "/admin/ws"):
-
-		wsHandler(url, w, r, m)
-	default:
-		fmt.Println("default", url)
-		res := index()
-		res.Render(context.Background(), w)
-	}
-
 }
 
 // func send(conn *websocket.Conn, t templ.Component) {
@@ -199,7 +245,7 @@ func wsHandler(url string, w http.ResponseWriter, r *http.Request, m *manager) {
 		return
 	}
 
-	path := url[10:]
+	path := url[4:]
 
 	m.conn[path] = append(m.conn[path], &client{conn, State{}})
 

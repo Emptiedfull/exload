@@ -6,7 +6,7 @@ templ siderbar() {
 			Exload
 		</h1>
 		<div class="options">
-			<div id="overview" class="option" hx-get="/admin/main_dashboard" hx-target="#content" hx-trigger="click">
+			<div id="overview" class="option" hx-get="/main_dashboard" hx-target="#content" hx-trigger="click">
 				<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
 					<path fill-rule="evenodd" clip-rule="evenodd" d="M5.65967 12.3536C5.44678 12.1583 5.44678 11.8417 5.65967 11.6464L9.25 8.35355C9.4629 8.15829 9.4629 7.84171 9.25 7.64645L5.65968 4.35355C5.44678 4.15829 5.44678 3.84171 5.65968 3.64645C5.87257 3.45118 6.21775 3.45118 6.43065 3.64645L10.021 6.93934C10.6597 7.52513 10.6597 8.47487 10.021 9.06066L6.43065 12.3536C6.21775 12.5488 5.87257 12.5488 5.65967 12.3536Z" fill="white" fill-opacity="0.2"></path>
 				</svg>
@@ -15,7 +15,7 @@ templ siderbar() {
 				</svg>
 				Overview
 			</div>
-			<div id="overview" class="option" hx-get="/admin/pen_dashboard" hx-target="#content" hx-trigger="click">
+			<div id="overview" class="option" hx-get="/pen_dashboard" hx-target="#content" hx-trigger="click">
 				<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
 					<path fill-rule="evenodd" clip-rule="evenodd" d="M5.65967 12.3536C5.44678 12.1583 5.44678 11.8417 5.65967 11.6464L9.25 8.35355C9.4629 8.15829 9.4629 7.84171 9.25 7.64645L5.65968 4.35355C5.44678 4.15829 5.44678 3.84171 5.65968 3.64645C5.87257 3.45118 6.21775 3.45118 6.43065 3.64645L10.021 6.93934C10.6597 7.52513 10.6597 8.47487 10.021 9.06066L6.43065 12.3536C6.21775 12.5488 5.87257 12.5488 5.65967 12.3536Z" fill="white" fill-opacity="0.2"></path>
 				</svg>
@@ -47,7 +47,7 @@ templ update_status_item(id string, num string) {
 }
 
 templ main_dashboard() {
-	<div class="content_main dashboard" id="content_main" hx-ext="ws" ws-connect="/admin/ws/main_dashboard">
+	<div class="content_main dashboard" id="content_main" hx-ext="ws" ws-connect="/ws/main_dashboard">
 		<h2 class="status_bar_title">
 			Overview
 		</h2>
@@ -61,26 +61,43 @@ templ main_dashboard() {
 	</div>
 }
 
+templ statusUpdate(id string, status bool) {
+	
+		<span class={ templ.KV("status green", status),templ.KV("status red",!status) } id={id} hx-get={"/toggle"+id} hx-swap="outerHTML" hx-trigger="click"></span>
+	
+}
+
 templ pen_dashboard(pens []penFormatted) {
 	<div class="pen-dashboard">
 		<div class="pen-dashboard-row">
-			<div class="pen-chart-cont" id="penchartcont">
-				@penChart("requests")
-			</div>
+			 <div class="pen-chart-cont" id="penchartcont">
+                    <div class="pen-chart-options"><span class="active" hx-get="/pen_chart/requests"
+                            hx-target="#penchartcont" hx-trigger="click" hx-swap="innerHTML">Requests</span> <span
+                            class="" hx-get="/pen_chart/memory" hx-target="#penchartcont" hx-trigger="click"
+                            hx-swap="innerHTML">Memory</span> <span class="" hx-get="/pen_chart/connections"
+                            hx-target="#penchartcont" hx-trigger="click" hx-swap="innerHTML">Connections</span></div>
+                    <canvas id="penChart" width="195" height="213"
+                        style="display: block; box-sizing: border-box; height: 213px; width: 195px;"></canvas>
+                    <script src="/static/penChart.js"></script>
+                </div>
 			<div class="pen-trafic-stats">
-				<h1>
-					Server Usage
-				</h1>
-				<div class="pen-trafic-servers">
-					<canvas id="serverUsagePieChart" width="50%"></canvas>
-					<script src="/static/penPiChart.js"></script>
+				<h1>Dynos</h1>
+				<div class="pen-dynos">
+					<div class="pen-dyno" hx-get="/status/scale" hx-target="#scale" hx-trigger="every 5s" hx-swap="outerHTML">
+						<span>Scaler</span>
+						<span style="background-color: green;" class="Status" id="scale"></span>
+					</div>
+					<div class="pen-dyno" hx-get="/status/monitor" hx-target="#monitor" hx-trigger="every 5s" hx-swap="outerHTML">
+						<span>Monitor</span>
+						<span style="background-color: red;" class="Status" id="monitor"></span>
+					</div>
 				</div>
 			</div>
 		</div>
 		<div class="pen-table">
 			<div class="pen-table-header">
 				<h1>Running pens</h1>
-				<svg hx-trigger="click" hx-get="/admin/pen_dashboard/getpentable" hx-target="#pen-table-content-container" hx-swap="innerHTML" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="24" height="24" viewBox="0,0,300,150">
+				<svg hx-trigger="click" hx-get="/pen_dashboard/getpentable" hx-target="#pen-table-content-container" hx-swap="innerHTML" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="24" height="24" viewBox="0,0,300,150">
 					<g fill="#fffefe" fill-rule="nonzero" stroke="none" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="10" stroke-dasharray="" stroke-dashoffset="0" font-family="none" font-weight="none" font-size="none" text-anchor="none" style="mix-blend-mode: normal"><g transform="scale(8.53333,8.53333)"><path d="M15,3c-2.9686,0 -5.69718,1.08344 -7.79297,2.875c-0.28605,0.22772 -0.42503,0.59339 -0.36245,0.95363c0.06258,0.36023 0.31676,0.6576 0.66286,0.77549c0.3461,0.1179 0.72895,0.03753 0.99842,-0.20959c1.74821,-1.49444 4.01074,-2.39453 6.49414,-2.39453c5.19656,0 9.45099,3.93793 9.95117,9h-2.95117l4,6l4,-6h-3.05078c-0.51129,-6.14834 -5.67138,-11 -11.94922,-11zM4,10l-4,6h3.05078c0.51129,6.14834 5.67138,11 11.94922,11c2.9686,0 5.69718,-1.08344 7.79297,-2.875c0.28605,-0.22772 0.42504,-0.59339 0.36245,-0.95363c-0.06258,-0.36023 -0.31676,-0.6576 -0.66286,-0.7755c-0.3461,-0.1179 -0.72895,-0.03753 -0.99842,0.20959c-1.74821,1.49444 -4.01074,2.39453 -6.49414,2.39453c-5.19656,0 -9.45099,-3.93793 -9.95117,-9h2.95117z"></path></g></g>
 				</svg>
 			</div>
@@ -118,9 +135,9 @@ templ penItem(name string, active string, max string, cmd string) {
 
 templ penChart(active string) {
 	<div class="pen-chart-options">
-		<span class={ templ.KV("active", active == "requests") } hx-get="/admin/pen_chart/requests" hx-target="#penchartcont" hx-trigger="click" hx-swap="innerHTML">Requests</span>
-		<span class={ templ.KV("active", active == "memory") } hx-get="/admin/pen_chart/memory" hx-target="#penchartcont" hx-trigger="click" hx-swap="innerHTML">Memory</span>
-		<span class={ templ.KV("active", active == "connections") } hx-get="/admin/pen_chart/connections" hx-target="#penchartcont" hx-trigger="click" hx-swap="innerHTML">Connections</span>
+		<span class={ templ.KV("active", active == "requests") } hx-get="/pen_chart/requests" hx-target="#penchartcont" hx-trigger="click" hx-swap="innerHTML">Requests</span>
+		<span class={ templ.KV("active", active == "memory") } hx-get="/pen_chart/memory" hx-target="#penchartcont" hx-trigger="click" hx-swap="innerHTML">Memory</span>
+		<span class={ templ.KV("active", active == "connections") } hx-get="/pen_chart/connections" hx-target="#penchartcont" hx-trigger="click" hx-swap="innerHTML">Connections</span>
 	</div>
 	<canvas id="penChart"></canvas>
 	<script src="/static/penChart.js"></script>
