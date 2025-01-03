@@ -17,7 +17,7 @@ func main() {
 
 	start := time.Now()
 
-	err := doXrequests(iterations, url)
+	err, _ := ramp(url)
 	// err := createRequestUnix("/", sock)
 
 	fmt.Println("no of requests", iterations)

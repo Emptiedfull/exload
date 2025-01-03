@@ -98,10 +98,21 @@ Exload is a lightweight reverse proxy made in go with extensive support and tool
 
 All requests at :80 automatically get forwarded to the configured endpoints
 
+### Admin panel
+
+All requests to the admin port are served by the monitor dyno as a webpage
+
+![Admin panel](https://cloud-k6uee02ir-hack-club-bot.vercel.app/0_0b90c86c-3605-42dd-bd7d-e29d50372210_.png)
+
+![Admin panel 2](
+    https://cloud-ieicixf7i-hack-club-bot.vercel.app/0_151a00f6-1b69-4012-8a50-b3855d84d734_.png
+)
+
 ### Testing options
 
 1. Go Test Suite: Allows for more load at one point
 2. Python stress.py: Lower system resource usage, lesser load 
+
 
 ### acknowledgement 
 
