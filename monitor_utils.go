@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -52,20 +51,18 @@ func totalMem(u map[string]*pen) int {
 		mem += memInfo(pen)
 
 	}
-	p, err := process.NewProcess(int32(os.Getpid()))
-	if err != nil {
-		fmt.Println("error reading parent mem")
-		return mem
-	}
-	m, err := p.MemoryInfo()
-	if err != nil {
-		fmt.Println("Error reading parent mem")
-		return mem
-	}
+	// // p, err := process.NewProcess(int32(os.Getpid()))
+	// if err != nil {
+	// 	fmt.Println("error reading parent mem")
+	// 	return mem
+	// }
+	// // m, err := p.MemoryInfo()
+	// if err != nil {
+	// 	fmt.Println("Error reading parent mem")
+	// 	return mem
+	// }
 
-	fmt.Println(mem/1024/1024, int(m.RSS)/1024/1024, os.Getpid())
-
-	mem += int(m.RSS)
+	// mem += int(m.RSS)
 
 	memMB := mem / 1024 / 1024
 

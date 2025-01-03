@@ -3,13 +3,17 @@ package main
 import (
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
+	"runtime/debug"
 	"strconv"
 
 	"github.com/gorilla/websocket"
 )
 
 func main() {
+
+	debug.SetMemoryLimit(1024 * 1024 * 1024)
 
 	adminServer := http.NewServeMux()
 
@@ -62,6 +66,14 @@ func main() {
 
 	go func() {
 		err = http.ListenAndServe(":"+strconv.Itoa(*con.Admin_port), adminServer)
+	}()
+
+	go func() {
+		fmt.Println("Starting pprof server on port 6060")
+		err := http.ListenAndServe(":6060", nil)
+		if err != nil {
+			fmt.Printf("Error starting pprof server: %v\n", err)
+		}
 	}()
 
 	if con.Statics.Fileserver != nil {

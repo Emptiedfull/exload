@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -231,8 +233,21 @@ func (m *manager) create(sock string, cmd *exec.Cmd, done chan<- *server) {
 		return
 	}
 
+	transport := &http.Transport{
+		DisableKeepAlives:   true,
+		MaxIdleConnsPerHost: 5,
+		MaxIdleConns:        5,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("unix", sock)
+		},
+	}
+
+	client := &http.Client{
+		Transport: transport,
+	}
+
 	// s := &server{url, port, cmd, "/", 0, sync.RWMutex{}, sync.RWMutex{}}
-	s := &server{sock: sock, cmd: cmd, prefix: "/"}
+	s := &server{sock: sock, cmd: cmd, prefix: "/", client: client}
 
 	ch := make(chan string)
 	go wait_for_startup(s, ch)

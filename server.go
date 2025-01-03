@@ -17,6 +17,8 @@ type server struct {
 	cmd    *exec.Cmd
 	prefix string
 
+	client *http.Client
+
 	req atomic.Int32
 	con atomic.Int32
 	rps atomic.Int32
@@ -30,16 +32,6 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *
 	defer s.mu.RUnlock()
 
 	s.req.Add(1)
-
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("unix", s.sock)
-		},
-	}
-
-	client := &http.Client{
-		Transport: transport,
-	}
 
 	req, err := http.NewRequest(r.Method, "http://unix"+url, nil)
 	if err != nil {
@@ -57,7 +49,7 @@ func (s *server) request(url string, w http.ResponseWriter, r *http.Request, c *
 		req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
 	}
 
-	resp, err := client.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		s.request(url, w, r, c)
 		return
