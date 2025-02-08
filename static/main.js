@@ -1,9 +1,15 @@
 
 
 
+
 if (socket){
+    try{
     socket.close()
+}catch(e){
+    console.log("eror lsoing,",e)
 }
+}
+
 
     var socket = new WebSocket("/ws/main_graph")
 
@@ -14,7 +20,7 @@ if (socket){
             labels: [], 
             datasets: [
                 {
-                    label: 'Requests per second',
+                    label: 'Temperture(*C)',
                     data: [],
                     backgroundColor: 'rgba(54, 162, 235, 0.2)',
                     borderColor: '#9F9FF8',
@@ -24,7 +30,7 @@ if (socket){
                     yAxisID: 'y' 
                 },
                 {
-                    label: 'Memory usage (MB)',
+                    label: 'Fuel Consumption(L/KM)',
                     data: [], 
                     backgroundColor: 'rgba(255, 99, 132, 0.2)',
                     borderColor: 'rgba(255, 99, 132, 1)', 
@@ -64,7 +70,7 @@ if (socket){
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: 'Requests',
+                        text: 'Temperture(*C)',
                         color: '#9F9FF8'
                     },
                     ticks: {
@@ -78,7 +84,7 @@ if (socket){
                     position: 'right',
                     title: {
                         display: true,
-                        text: 'Memory (MB)',
+                        text: 'Fuel Consumption(L/KM)',
                         color: '#92BFFF' 
                     },
                     ticks: {

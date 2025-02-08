@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,7 +26,7 @@ type State struct {
 	cons string
 }
 
-func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
+func monitor(conns map[string][]*client, url string, w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case url == "/":
@@ -38,10 +39,33 @@ func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
 
 		}
 	case url == "/pen_dashboard/getpentable":
-		res := penTableItems(getPenFormatted(m))
+		penT := &penFormatted{
+			name: "hi",
+		}
+		tb := make([]penFormatted, 0)
+		tb = append(tb, *penT)
+
+		res := penTableItems(tb)
 		res.Render(context.Background(), w)
 	case url == "/pen_dashboard":
-		res := pen_dashboard(getPenFormatted(m))
+		penT := []penFormatted{{
+			name:   "Z1029",
+			active: strconv.FormatFloat(10.2, 'f', 1, 64),
+			max:    "82%",
+			cmd:    "3 Years",
+		}, {
+			name:   "S2034",
+			active: strconv.FormatFloat(9.6, 'f', 1, 64),
+			max:    "97%",
+			cmd:    "5 Years",
+		}, {
+			name:   "K9272",
+			active: strconv.FormatFloat(11.2, 'f', 1, 64),
+			max:    "72%",
+			cmd:    "1 Year",
+		}}
+
+		res := pen_dashboard(penT)
 		res.Render(context.Background(), w)
 	case url == "/main_dashboard":
 		res := main_dashboard()
@@ -50,33 +74,30 @@ func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
 		t := strings.TrimPrefix(url, "/toggle")
 		switch t {
 		case "monitor":
-			m.toggleMonitorDyno()
 			res := statusUpdate("monitor", con.Dynos.Monitor)
 			res.Render(context.Background(), w)
 		case "scale":
-			m.toggleScaleDyno()
 			res := statusUpdate("scale", con.Dynos.Scaler)
 			res.Render(context.Background(), w)
 		}
 
 	case url == "/enableMonitor":
-		m.startMonitorDyno(false)
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Monitor enabled"))
 	case url == "/disableMonitor":
-		m.EndMonitorDyno()
 		w.WriteHeader(http.StatusAccepted)
 		w.Write([]byte("monitor disable"))
 	case url == "/disableScale":
-		m.endScaleDyno()
 		w.WriteHeader(http.StatusAccepted)
 		w.Write([]byte("scaler disable"))
 	case url == "/enableScale":
-		m.startScaleDyno(false)
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("scaler enabled"))
 	case strings.HasPrefix(url, "/pen_chart/"):
 		chartType := strings.TrimPrefix(url, "/pen_chart/")
+		fmt.Println("ChartType:", chartType)
 		res := penChart(chartType)
 		res.Render(context.Background(), w)
 	case strings.HasPrefix(url, "/status/"):
@@ -92,7 +113,7 @@ func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
 
 	case strings.HasPrefix(url, "/ws"):
 
-		wsHandler(url, w, r, m)
+		wsHandler(conns, url, w, r)
 	default:
 		fmt.Println(url)
 		w.WriteHeader(http.StatusNotFound)
@@ -101,7 +122,7 @@ func monitor(m *manager, url string, w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (m *manager) monitorDyno(quit <-chan bool) {
+func monitorDyno(conns map[string][]*client, quit <-chan bool) {
 	fmt.Println("monitor dyno started")
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -109,21 +130,24 @@ func (m *manager) monitorDyno(quit <-chan bool) {
 	for {
 		select {
 		case <-ticker.C:
-			if len(m.conn["main_dashboard"]) != 0 {
+			if len(conns["main_dashboard"]) != 0 {
 
-				gh := graphUpdate(m)
+				gh := graphUpdate(conns)
+				consR := rand.Intn(5) + 4
+				totalR := 12
+				ActiveR := 11
 
 				rps := strconv.Itoa(gh.RPS)
 				mem := strconv.Itoa(gh.MEM)
-				cons := strconv.Itoa(getConns(m.UrlMap))
-				total, active := getTotalPorts(m)
+				cons := strconv.Itoa(consR)
+				total, active := totalR, ActiveR
 				srvs := strconv.Itoa(active) + "/" + strconv.Itoa(total)
 
 				nS := State{rps, mem, srvs, cons}
-				go sendUpdate(m.conn["main_dashboard"], nS)
+				go sendUpdate(conns["main_dashboard"], nS)
 			}
 
-			pengraphUpdate(m)
+			pengraphUpdate(conns)
 		case <-quit:
 			fmt.Println("Monitor dyno killed")
 			return
@@ -136,48 +160,59 @@ type graph_update struct {
 	MEM int `json:"mem"`
 }
 
-func pengraphUpdate(m *manager) {
+func pengraphUpdate(conns map[string][]*client) {
 
-	if len(m.conn["pen_graph/Requests"]) != 0 {
+	if len(conns["pen_graph/Engine%20Torque"]) != 0 {
+		fmt.Println("sending pen graph upare")
 		pens := make(map[string]int, 0)
-		for pre, pen := range m.UrlMap {
-			pens[pre] = getRpsByPen(pen)
-		}
+		// for pre, pen := range m.UrlMap {
+		// 	pens[pre] = getRpsByPen(pen)
+		// }
+		pens["Z1023"] = rand.Intn(10) + 200
+		pens["239T3"] = rand.Intn(10) + 200
+		pens["K9272"] = rand.Intn(20) + 250
 
-		for _, client := range m.conn["pen_graph/Requests"] {
+		for _, client := range conns["pen_graph/Engine%20Torque"] {
 			client.conn.WriteJSON(pens)
 		}
 	}
 
-	if len(m.conn["pen_graph/Memory"]) != 0 {
+	if len(conns["pen_graph/Engine%20Power"]) != 0 {
+		fmt.Println("sending pen graph upare")
 		pens := make(map[string]int, 0)
-		for pre, pen := range m.UrlMap {
-			pens[pre] = memInfo(pen) / 1024 / 1024
-		}
+		// for pre, pen := range m.UrlMap {
+		// 	pens[pre] = getRpsByPen(pen)
+		// }
+		pens["Z1023"] = rand.Intn(40) + 60
+		pens["239T3"] = rand.Intn(40) + 60
+		pens["K9272"] = rand.Intn(40) + 60
 
-		for _, client := range m.conn["pen_graph/Memory"] {
+		for _, client := range conns["pen_graph/Engine%20Power"] {
 			client.conn.WriteJSON(pens)
 		}
 	}
 
-	if len(m.conn["/admin/ws/pen_graph/Connections"]) != 0 {
-
+	if len(conns["pen_graph/Air%20Flow"]) != 0 {
+		fmt.Println("sending pen graph upare")
 		pens := make(map[string]int, 0)
-		for pre, pen := range m.UrlMap {
-			pens[pre] = int(pen.con.Load())
-		}
+		// for pre, pen := range m.UrlMap {
+		// 	pens[pre] = getRpsByPen(pen)
+		// }
+		pens["Z1023"] = rand.Intn(80) + 120
+		pens["239T3"] = rand.Intn(80) + 120
+		pens["K9272"] = rand.Intn(80) + 120
 
-		for _, client := range m.conn["pen_graph/Connections"] {
+		for _, client := range conns["pen_graph/Air%20Flow"] {
 			client.conn.WriteJSON(pens)
 		}
 	}
 
 }
 
-func graphUpdate(m *manager) graph_update {
-	gh := graph_update{TotalRps(m.UrlMap), totalMem(m.UrlMap)}
+func graphUpdate(conns map[string][]*client) graph_update {
+	gh := graph_update{rand.Intn(20) + 8, rand.Intn(21) + 60}
 
-	clients := m.conn["main_graph"]
+	clients := conns["main_graph"]
 	if len(clients) == 0 {
 		return gh
 	}
@@ -238,7 +273,7 @@ func sendMass(conn *websocket.Conn, tl []templ.Component) {
 
 }
 
-func wsHandler(url string, w http.ResponseWriter, r *http.Request, m *manager) {
+func wsHandler(conns map[string][]*client, url string, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println("Error upgrading")
@@ -247,7 +282,7 @@ func wsHandler(url string, w http.ResponseWriter, r *http.Request, m *manager) {
 
 	path := url[4:]
 
-	m.conn[path] = append(m.conn[path], &client{conn, State{}})
+	conns[path] = append(conns[path], &client{conn, State{}})
 
 	for {
 
@@ -255,7 +290,7 @@ func wsHandler(url string, w http.ResponseWriter, r *http.Request, m *manager) {
 		if err != nil {
 			fmt.Println("closing conn", err)
 			conn.Close()
-			m.conn[path] = nil
+			conns[path] = nil
 			break
 		}
 	}

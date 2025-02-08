@@ -3,86 +3,35 @@ package main
 import (
 	"fmt"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
-	"runtime/debug"
 	"strconv"
-
-	"github.com/gorilla/websocket"
 )
 
 func main() {
 
-	debug.SetMemoryLimit(1024 * 1024 * 1024)
-
 	adminServer := http.NewServeMux()
 
-	logs, _ := os.ReadDir("./logs/server_logs")
-	for _, file := range logs {
-		path := "./logs/server_logs/" + file.Name()
-		os.RemoveAll(path)
-	}
-
 	err := getConfig()
+	conns := make(map[string][]*client)
 
 	if err != nil {
 		fmt.Println("Error loading config")
 		os.Exit(1)
-	}
-	c := NewCache(1)
-	// c.put("/api/ping", make([]byte, 5), 1*time.Hour)
-	m := NewManager()
-	defer m.file.Close()
 
+		// c.put("/api/ping", make([]byte, 5), 1*time.Hour)
+
+	}
 	fs := http.FileServer(http.Dir("./static"))
 	adminServer.Handle("/static/", http.StripPrefix("/static", fs))
-
-	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-
-		http.ServeFile(w, r, "static/favicon.ico")
-	})
-
+	go monitorDyno(conns, make(<-chan bool))
 	adminServer.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
-		monitor(m, r.URL.String(), w, r)
+		fmt.Println("handling", r.URL.String())
+		monitor(conns, r.URL.String(), w, r)
 
 	})
+	fmt.Println(strconv.Itoa(*con.Admin_port))
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		url := r.URL.String()
-		if websocket.IsWebSocketUpgrade(r) {
-			m.proxyWebSocket(w, r, url)
-		} else {
-			m.proxy(url, w, r, c)
-		}
+	err = http.ListenAndServe(":"+strconv.Itoa(*con.Admin_port), adminServer)
 
-	})
-
-	pid := os.Getpid()
-	fmt.Printf("The PID of this process is %d\n", pid)
-
-	port := strconv.Itoa(int(*con.Proxy_port))
-	fmt.Printf("Starting server on port %s\n", port)
-
-	go func() {
-		err = http.ListenAndServe(":"+strconv.Itoa(*con.Admin_port), adminServer)
-	}()
-
-	go func() {
-		fmt.Println("Starting pprof server on port 6060")
-		err := http.ListenAndServe(":6060", nil)
-		if err != nil {
-			fmt.Printf("Error starting pprof server: %v\n", err)
-		}
-	}()
-
-	if con.Statics.Fileserver != nil {
-		fs := http.FileServer(http.Dir(*con.Statics.Fileserver))
-		http.Handle("/static/", http.StripPrefix("/static", fs))
-	}
-
-	err = http.ListenAndServe(":"+port, nil)
-	if err != nil {
-		fmt.Printf("Error starting server: %v\n", err)
-	}
 }

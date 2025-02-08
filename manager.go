@@ -91,7 +91,7 @@ func (m *manager) startMonitorDyno(force bool) {
 	if !con.Dynos.Monitor || force {
 		ch := make(chan bool)
 		con.Dynos.Monitor = true
-		go m.monitorDyno(ch)
+		// go m.monitorDyno(ch)
 		m.monitorQuit = ch
 	}
 

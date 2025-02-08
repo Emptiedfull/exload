@@ -4,7 +4,11 @@
 
 
     if (socket){
+        try{
         socket.close()
+    }catch(e){
+        console.log("eror lsoing,",e)
+    }
     }
 
     var socket = new WebSocket("/ws/pen_graph/"+document.querySelector(".active").innerHTML)
@@ -49,8 +53,8 @@
                         color: 'rgba(255, 255, 255, 0.40)',
                         maxTicksLimit: 8
                     },
-                    suggestedMin: 50, 
-                    suggestedMax: 300 
+                    suggestedMin: 0, 
+                    suggestedMax: 100 
                 }
                 
             },
